@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CONSTRUMAX – Máquinas e Serviços</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav>
+  <a href="#" class="logo">
+    <div class="logo-icon">C</div>
+    <div>
+      <div class="logo-text">CONSTRU<span>MAX</span></div>
+      <span class="logo-sub">MÁQUINAS &amp; SERVIÇOS</span>
+    </div>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#inicio">Início</a></li>
+    <li><a href="#servicos">Serviços</a></li>
+    <li><a href="#maquinas">Máquinas</a></li>
+    <li><a href="#profissionais">Profissionais</a></li>
+    <li><a href="#sobre">Quem Somos</a></li>
+    <li><a href="#contato">Contato</a></li>
+  </ul>
+  <div class="nav-right">
+    <a class="btn-chat-nav" onclick="openChat()">💬 Chat</a>
+   <a id="btnLogin" class="btn-login" onclick="openModal('login')">
+    🔑 <span>Entrar</span>
+</a>
+
+<button id="btnCadastro" class="btn-cadastro" onclick="openModal('cadastro')">
+    ✚ Criar Conta
+</button>
+  </div>
+</nav>
+
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-logo">
+      <div class="logo-icon" style="width:32px;height:32px;font-size:14px;">C</div>
+      <div class="logo-text" style="font-size:18px;">CONSTRU<span>MAX</span></div>
+    </div>
+    <div class="modal-tabs">
+      <div class="modal-tab active" id="tab-login" onclick="switchTab('login')">Entrar</div>
+      <div class="modal-tab" id="tab-cadastro" onclick="switchTab('cadastro')">Criar Conta</div>
+    </div>
+    <div class="modal-panel active" id="panel-login">
+      <div class="mform-group"><label>E-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com"></div>
+      <div class="mform-group"><label>Senha</label><input type="password" id="loginSenha" placeholder="••••••••"></div>
+      <button class="btn-modal-submit" onclick="loginUsuario()">
+    Entrar na conta
+</button>
+      <div class="modal-switch">Não tem conta? <a onclick="switchTab('cadastro')">Criar agora</a></div>
+    </div>
+    <div class="modal-panel" id="panel-cadastro">
+      <div class="modal-tipo-label">Tipo de conta</div>
+      <div class="tipo-btns">
+        <button class="tipo-btn selected" onclick="selectTipo(this)"><span class="tipo-icon">🏗️</span> Contratante</button>
+        <button class="tipo-btn" onclick="selectTipo(this)"><span class="tipo-icon">👷</span> Profissional</button>
+      </div>
+      <div class="modal-row">
+        <div class="mform-group"><label>Nome</label><input type="text" id="nome" placeholder="Seu nome"></div>
+        <div class="mform-group"><label>Telefone</label><input type="text" id="telefone" placeholder="(00) 00000-0000"></div>
+      </div>
+      <div class="mform-group"><label>E-mail</label><input type="email" id="email" placeholder="seu@email.com"></div>
+      <div class="mform-group"><label>Senha</label><input type="password" id="senha" placeholder="Mínimo 8 caracteres"></div>
+      <div class="mform-group"><label>Cidade / Estado</label><input type="text" placeholder="Ex: Praia Grande, SP"></div>
+      <button class="btn-modal-submit" onclick="cadastrarUsuario()">
+    Criar minha conta
+</button>
+      <div class="modal-switch">Já tem conta? <a onclick="switchTab('login')">Entrar</a></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="chatOverlay" onclick="closeChatOutside(event)">
+  <div class="chat-modal">
+    <div class="chat-header">
+      <div class="chat-header-left">
+        <div class="chat-avatar-header">💬</div>
+        <div class="chat-header-info">
+          <div class="chat-header-name">Mensagens</div>
+          <div class="chat-header-status">Online</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="closeChat()" style="position:static;">✕</button>
+    </div>
+
+    <div class="chat-tabs">
+      <div class="chat-tab active" onclick="switchChatTab('conversas')">💬 Conversas</div>
+      <div class="chat-tab" onclick="switchChatTab('suporte')">🛠️ Suporte</div>
+      <div class="chat-tab" onclick="switchChatTab('novo')">✚ Nova Mensagem</div>
+    </div>
+
+    <div class="chat-list">
+
+      <div class="chat-list-panel active" id="chat-panel-conversas">
+        <div id="chat-conv-list">
+          <div class="chat-contact unread" onclick="openConversation('Ricardo Santos','RS','#F5A800','#111')">
+            <div class="chat-contact-avatar" style="background:#F5A800;color:#111;">RS</div>
+            <div class="chat-contact-info">
+              <div class="chat-contact-top">
+                <div class="chat-contact-name">Ricardo Santos – Pedreiro</div>
+                <div class="chat-contact-time">14:30</div>
+              </div>
+              <div class="chat-contact-msg">Boa tarde! A escavadeira ainda está disponível?</div>
+            </div>
+            <div class="chat-unread-badge">2</div>
+          </div>
+          <div class="chat-contact" onclick="openConversation('Fernando Alves','FA','#1A1A1A','#F5A800')">
+            <div class="chat-contact-avatar" style="background:#1A1A1A;color:#F5A800;">FA</div>
+            <div class="chat-contact-info">
+              <div class="chat-contact-top">
+                <div class="chat-contact-name">Fernando Alves – Eletricista</div>
+                <div class="chat-contact-time">11:45</div>
+              </div>
+              <div class="chat-contact-msg">Perfeito, qual o valor da diária?</div>
+            </div>
+          </div>
+          <div class="chat-contact" onclick="openConversation('Carlos Pinto','CP','#F5A800','#111')">
+            <div class="chat-contact-avatar" style="background:#F5A800;color:#111;">CP</div>
+            <div class="chat-contact-info">
+              <div class="chat-contact-top">
+                <div class="chat-contact-name">Carlos Pinto – Pintor</div>
+                <div class="chat-contact-time">Ontem</div>
+              </div>
+              <div class="chat-contact-msg">Pode me enviar as fotos do ambiente?</div>
+            </div>
+          </div>
+          <div class="chat-contact" onclick="openConversation('Suporte CONSTRUMAX','SC','#F5A800','#111')">
+            <div class="chat-contact-avatar" style="background:#F5A800;color:#111;">SC</div>
+            <div class="chat-contact-info">
+              <div class="chat-contact-top">
+                <div class="chat-contact-name">Suporte CONSTRUMAX</div>
+                <div class="chat-contact-time">2 dias</div>
+              </div>
+              <div class="chat-contact-msg">Olá! Como podemos ajudar?</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-conversation" id="chat-conversation-view">
+          <div class="chat-back" onclick="closeConversation()">← Voltar</div>
+          <div class="chat-messages" id="chat-messages-list">
+            <div class="msg recv"><div class="msg-bubble">Boa tarde! A escavadeira ainda está disponível para a próxima semana?</div><div class="msg-time">14:28</div></div>
+            <div class="msg sent"><div class="msg-bubble">Olá João! Sim, está disponível. Qual o período que precisa?</div><div class="msg-time">14:29</div></div>
+            <div class="msg recv"><div class="msg-bubble">Preciso de segunda a sexta, das 7h às 17h. Qual o valor?</div><div class="msg-time">14:29</div></div>
+            <div class="msg sent"><div class="msg-bubble">O valor é R$ 1.200 a diária com operador incluso.</div><div class="msg-time">14:30</div></div>
+          </div>
+          <div class="chat-input-row">
+            <input class="chat-input" id="chat-input-field" type="text" placeholder="Digite sua mensagem..." onkeydown="sendOnEnter(event)">
+            <button class="chat-send" onclick="sendMessage()">➤</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-list-panel" id="chat-panel-suporte">
+        <div class="chat-empty">
+          <div class="chat-empty-icon">🛠️</div>
+          <div style="color:#bbb;font-weight:600;">Suporte CONSTRUMAX</div>
+          <div>Nossa equipe responde em até 2 horas nos dias úteis.</div>
+          <button class="btn-prof-contact" style="margin-top:12px;width:auto;padding:10px 24px;" onclick="openConversation('Suporte CONSTRUMAX','SC','#F5A800','#111');switchChatTab('conversas')">Iniciar atendimento</button>
+        </div>
+      </div>
+
+      <div class="chat-list-panel" id="chat-panel-novo">
+        <div style="padding:20px;">
+          <div class="mform-group"><label style="color:#888;">Para quem deseja enviar?</label>
+            <select style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;padding:11px 14px;font-size:13px;font-family:Inter,sans-serif;outline:none;border-radius:0;">
+              <option value="">Selecione um profissional ou serviço</option>
+              <option>Ricardo Santos – Pedreiro</option>
+              <option>Fernando Alves – Eletricista</option>
+              <option>Marcos Lima – Encanador</option>
+              <option>Carlos Pinto – Pintor</option>
+              <option>João Oliveira – Eng. Civil</option>
+              <option>Suporte CONSTRUMAX</option>
+            </select>
+          </div>
+          <div class="mform-group"><label style="color:#888;">Mensagem</label>
+            <textarea style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;padding:11px 14px;font-size:13px;font-family:Inter,sans-serif;outline:none;border-radius:0;resize:vertical;min-height:90px;" placeholder="Olá! Gostaria de..."></textarea>
+          </div>
+          <button class="btn-modal-submit" style="margin-top:0;">Enviar mensagem</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<section class="hero" id="inicio">
+  <div class="hero-bg"></div>
+  <div class="hero-gradient"></div>
+  <div class="hero-content">
+    <div class="eyebrow">CONSTRUMAX</div>
+    <h1>
+      ALUGUEL DE<br>
+      <span class="word-yellow">MÁQUINAS</span> E<br>
+      <span class="word-yellow">SERVIÇOS</span><br>
+      <span class="word-white">PARA SUA OBRA</span>
+    </h1>
+    <p>Equipamentos de qualidade, profissionais verificados e soluções completas para construção, terraplanagem e muito mais.</p>
+    <div class="hero-btns">
+      <a href="#contato" class="btn-primary">📋 Solicitar Orçamento</a>
+      <a href="#maquinas" class="btn-outline">🚧 Ver Máquinas</a>
+    </div>
+  </div>
+  
+</section>
+
+<div class="trust-bar">
+  <div class="trust-item"><div class="trust-icon">⚙️</div><div class="trust-text"><strong>Equipamentos modernos</strong><span>Revisados e prontos para o trabalho</span></div></div>
+  <div class="trust-item"><div class="trust-icon">👷</div><div class="trust-text"><strong>Profissionais verificados</strong><span>Perfis validados com avaliações reais</span></div></div>
+  <div class="trust-item"><div class="trust-icon">⚡</div><div class="trust-text"><strong>Atendimento ágil</strong><span>Rapidez e eficiência garantidas</span></div></div>
+  <div class="trust-item"><div class="trust-icon">🛡️</div><div class="trust-text"><strong>Segurança garantida</strong><span>Comprometidos com qualidade total</span></div></div>
+</div>
+
+<section class="services" id="servicos">
+  <div class="section-header">
+    <div>
+      <div class="section-label">Nossos Serviços</div>
+      <h2 class="section-title">Soluções completas para<br>todos os tipos de obras</h2>
+    </div>
+    <p class="section-sub">Serviços especializados com profissionais capacitados para garantir o sucesso do seu projeto.</p>
+  </div>
+  <div class="services-grid">
+    <div class="service-card"><div class="service-icon">🏗️</div><h3>Construção Civil</h3><p>Construção de casas, prédios, galpões e estruturas residenciais e comerciais.</p></div>
+    <div class="service-card"><div class="service-icon">🚛</div><h3>Terraplanagem</h3><p>Nivelamento de terrenos, abertura de vias, corte e aterro com máquinas especializadas.</p></div>
+    <div class="service-card"><div class="service-icon">🔨</div><h3>Reformas</h3><p>Reformas residenciais, comerciais e prediais em geral com qualidade garantida.</p></div>
+    <div class="service-card"><div class="service-icon">⚙️</div><h3>Serviços Especializados</h3><p>Demolições, dragagens, escavações e serviços técnicos de alto nível.</p></div>
+    <div class="service-card"><div class="service-icon">🔧</div><h3>Manutenção</h3><p>Manutenção preventiva e corretiva para sua obra e equipamentos em geral.</p></div>
+    <div class="service-card"><div class="service-icon">📐</div><h3>Projetos</h3><p>Elaboração de projetos arquitetônicos e estruturais com engenheiros experientes.</p></div>
+  </div>
+</section>
+
+<section class="machines" id="maquinas">
+  <div class="section-header">
+    <div>
+      <div class="section-label">Locação de Máquinas</div>
+      <h2 class="section-title" style="color:var(--white);">Os melhores equipamentos<br>para sua obra</h2>
+    </div>
+    <p class="section-sub" style="color:#888;">Linha completa de máquinas para obras de todos os portes.</p>
+  </div>
+  <div class="machines-grid">
+    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1565008447742-97f6f38c985c?w=600&q=80" alt="Retroescavadeira"><div class="machine-info"><h3>Retroescavadeira</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
+    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&q=80" alt="Escavadeira"><div class="machine-info"><h3>Escavadeira Hidráulica</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
+    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=80" alt="Mini Escavadeira"><div class="machine-info"><h3>Mini Escavadeira</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
+    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=600&q=80" alt="Bobcat"><div class="machine-info"><h3>Bobcat</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
+    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1573152958734-1922c188fba3?w=600&q=80" alt="Compactador"><div class="machine-info"><h3>Rolo Compactador</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
+    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=600&q=80" alt="Caminhão"><div class="machine-info"><h3>Caminhão Basculante</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
+  </div>
+</section>
+
+<section class="professionals" id="profissionais">
+  <div class="section-header">
+    <div>
+      <div class="section-label">Profissionais</div>
+      <h2 class="section-title">Encontre o profissional<br>certo para sua obra</h2>
+    </div>
+    <p class="section-sub">Conectamos você com pedreiros, eletricistas, encanadores, pintores e mais — todos verificados.</p>
+  </div>
+  <div class="prof-grid">
+    <div class="prof-card"><div class="prof-verified">✔ Verificado</div><div class="prof-header"><div class="prof-avatar">RS</div><div class="prof-meta"><div class="prof-name">Ricardo Santos</div><div class="prof-role">Pedreiro</div></div></div><div class="prof-stars">★★★★★ <span>(47 avaliações)</span></div><div class="prof-tags"><span class="prof-tag">Alvenaria</span><span class="prof-tag">Revestimentos</span><span class="prof-tag">Fundações</span></div><div class="prof-info"><div class="prof-location">📍 Praia Grande, SP</div><div class="prof-price">R$ 280 <small>/ dia</small></div></div><button class="btn-prof-contact" onclick="openModal('cadastro')">Contratar</button></div>
+    <div class="prof-card"><div class="prof-verified">✔ Verificado</div><div class="prof-header"><div class="prof-avatar" style="background:#1A1A1A;color:var(--yellow);">FA</div><div class="prof-meta"><div class="prof-name">Fernando Alves</div><div class="prof-role">Eletricista</div></div></div><div class="prof-stars">★★★★★ <span>(38 avaliações)</span></div><div class="prof-tags"><span class="prof-tag">Instalações</span><span class="prof-tag">Quadros Elétricos</span><span class="prof-tag">SPDA</span></div><div class="prof-info"><div class="prof-location">📍 Santos, SP</div><div class="prof-price">R$ 320 <small>/ dia</small></div></div><button class="btn-prof-contact" onclick="openModal('cadastro')">Contratar</button></div>
+    <div class="prof-card"><div class="prof-verified">✔ Verificado</div><div class="prof-header"><div class="prof-avatar" style="background:#2C2C2C;color:var(--yellow);">ML</div><div class="prof-meta"><div class="prof-name">Marcos Lima</div><div class="prof-role">Encanador</div></div></div><div class="prof-stars">★★★★☆ <span>(29 avaliações)</span></div><div class="prof-tags"><span class="prof-tag">Hidráulica</span><span class="prof-tag">Esgoto</span><span class="prof-tag">Gás</span></div><div class="prof-info"><div class="prof-location">📍 São Vicente, SP</div><div class="prof-price">R$ 260 <small>/ dia</small></div></div><button class="btn-prof-contact" onclick="openModal('cadastro')">Contratar</button></div>
+    <div class="prof-card"><div class="prof-verified">✔ Verificado</div><div class="prof-header"><div class="prof-avatar" style="background:#F5A800;color:#111;">CP</div><div class="prof-meta"><div class="prof-name">Carlos Pinto</div><div class="prof-role">Pintor</div></div></div><div class="prof-stars">★★★★★ <span>(52 avaliações)</span></div><div class="prof-tags"><span class="prof-tag">Textura</span><span class="prof-tag">Grafiato</span><span class="prof-tag">Pintura Interna</span></div><div class="prof-info"><div class="prof-location">📍 Cubatão, SP</div><div class="prof-price">R$ 240 <small>/ dia</small></div></div><button class="btn-prof-contact" onclick="openModal('cadastro')">Contratar</button></div>
+    <div class="prof-card"><div class="prof-verified">✔ Verificado</div><div class="prof-header"><div class="prof-avatar" style="background:#1A1A1A;color:var(--yellow);">JO</div><div class="prof-meta"><div class="prof-name">João Oliveira</div><div class="prof-role">Eng. Civil</div></div></div><div class="prof-stars">★★★★★ <span>(61 avaliações)</span></div><div class="prof-tags"><span class="prof-tag">Projetos</span><span class="prof-tag">Laudos</span><span class="prof-tag">ART</span></div><div class="prof-info"><div class="prof-location">📍 Praia Grande, SP</div><div class="prof-price">R$ 500 <small>/ dia</small></div></div><button class="btn-prof-contact" onclick="openModal('cadastro')">Contratar</button></div>
+    <div class="prof-card"><div class="prof-verified">✔ Verificado</div><div class="prof-header"><div class="prof-avatar" style="background:#2C2C2C;color:var(--yellow);">AM</div><div class="prof-meta"><div class="prof-name">André Mota</div><div class="prof-role">Soldador</div></div></div><div class="prof-stars">★★★★☆ <span>(22 avaliações)</span></div><div class="prof-tags"><span class="prof-tag">MIG/MAG</span><span class="prof-tag">Estruturas Metálicas</span><span class="prof-tag">Portões</span></div><div class="prof-info"><div class="prof-location">📍 Mongaguá, SP</div><div class="prof-price">R$ 300 <small>/ dia</small></div></div><button class="btn-prof-contact" onclick="openModal('cadastro')">Contratar</button></div>
+  </div>
+  <div style="text-align:center;margin-top:40px;">
+    <a href="#" class="btn-primary" onclick="openModal('cadastro');return false;">Ver todos os profissionais</a>
+  </div>
+</section>
+
+<div class="stats">
+  <div class="stat-item"><div class="stat-num">+500</div><div class="stat-label">Obras realizadas</div></div>
+  <div class="stat-item"><div class="stat-num">+200</div><div class="stat-label">Máquinas alugadas</div></div>
+  <div class="stat-item"><div class="stat-num">+150</div><div class="stat-label">Profissionais cadastrados</div></div>
+  <div class="stat-item"><div class="stat-num">+8</div><div class="stat-label">Anos de experiência</div></div>
+</div>
+
+<section class="about" id="sobre">
+  <div class="about-img-wrap">
+    <img class="about-img" src="https://images.unsplash.com/photo-1503387762-592deb58ef4e?w=700&q=80" alt="Sobre a Construmax">
+    <div class="about-badge"><div class="about-badge-num">8+</div><div class="about-badge-text">Anos no mercado</div></div>
+  </div>
+  <div class="about-content">
+    <div class="section-label">Quem Somos</div>
+    <h2 class="section-title">Experiência e compromisso com a sua obra</h2>
+    <p class="section-sub">A CONSTRUMAX é referência em aluguel de máquinas, prestação de serviços e conexão com profissionais qualificados para construção civil.</p>
+    <div class="about-reasons">
+      <div class="reason"><div class="reason-check">✓</div> Atendimento rápido e personalizado</div>
+      <div class="reason"><div class="reason-check">✓</div> Equipamentos revisados e de qualidade</div>
+      <div class="reason"><div class="reason-check">✓</div> Profissionais verificados e avaliados</div>
+      <div class="reason"><div class="reason-check">✓</div> Cumprimento de prazos garantido</div>
+      <div class="reason"><div class="reason-check">✓</div> Segurança em primeiro lugar</div>
+      <div class="reason"><div class="reason-check">✓</div> Melhor custo-benefício da região</div>
+    </div>
+    <div class="about-btn"><a href="#contato" class="btn-primary">Conheça nossa empresa</a></div>
+  </div>
+</section>
+
+<section class="testimonials">
+  <div class="section-header" style="justify-content:center;text-align:center;flex-direction:column;align-items:center;">
+    <div class="section-label">Depoimentos</div>
+    <h2 class="section-title">O que nossos clientes dizem</h2>
+  </div>
+  <div class="testimonials-grid">
+    <div class="testimonial"><div class="stars">★★★★★</div><p>"Excelente atendimento e máquinas em perfeito estado! A CONSTRUMAX fez toda a diferença na minha obra."</p><div class="testimonial-author"><div class="author-avatar">JB</div><div><div class="author-name">João Batista</div><div class="author-role">Engenheiro Civil</div></div></div></div>
+    <div class="testimonial"><div class="stars">★★★★★</div><p>"Encontrei o pedreiro ideal pela plataforma em menos de 1 hora. Profissional incrível, obra entregue no prazo!"</p><div class="testimonial-author"><div class="author-avatar">MO</div><div><div class="author-name">Marcos Oliveira</div><div class="author-role">Construtor</div></div></div></div>
+    <div class="testimonial"><div class="stars">★★★★★</div><p>"Ótimos equipamentos e preços justos. A CONSTRUMAX é nossa primeira escolha para locação e mão de obra."</p><div class="testimonial-author"><div class="author-avatar">CM</div><div><div class="author-name">Carlos Mendes</div><div class="author-role">Empresário</div></div></div></div>
+  </div>
+</section>
+
+<section class="contact" id="contato">
+  <div>
+    <div class="section-label">Fale Conosco</div>
+    <h2 class="section-title">Precisando de máquinas<br>ou serviços para sua obra?</h2>
+    <p class="section-sub">Entre em contato agora mesmo e solicite seu orçamento sem compromisso.</p>
+    <div class="contact-details">
+      <div class="contact-item"><div class="contact-icon">📱</div><div><div style="color:#fff;font-weight:600;font-size:13px;">WhatsApp</div><div>(13) 99999-9999</div></div></div>
+      <div class="contact-item"><div class="contact-icon">📞</div><div><div style="color:#fff;font-weight:600;font-size:13px;">Telefone</div><div>(13) 99999-9999</div></div></div>
+      <div class="contact-item"><div class="contact-icon">✉️</div><div><div style="color:#fff;font-weight:600;font-size:13px;">E-mail</div><div>contato@construmax.com.br</div></div></div>
+      <div class="contact-item"><div class="contact-icon">📍</div><div><div style="color:#fff;font-weight:600;font-size:13px;">Endereço</div><div>Rua das Construções, 193 – Praia Grande, SP</div></div></div>
+    </div>
+  </div>
+  <div class="contact-form">
+    <div class="form-row">
+      <div class="form-group"><label>Nome completo</label><input type="text" placeholder="Seu nome"></div>
+      <div class="form-group"><label>Telefone / WhatsApp</label><input type="text" placeholder="(00) 00000-0000"></div>
+    </div>
+    <div class="form-group">
+      <label>Serviço desejado</label>
+      <select>
+        <option value="">Selecione um serviço</option>
+        <option>Locação de Escavadeira</option><option>Locação de Retroescavadeira</option>
+        <option>Locação de Bobcat</option><option>Locação de Compactador</option>
+        <option>Locação de Caminhão Basculante</option><option>Contratar Pedreiro</option>
+        <option>Contratar Eletricista</option><option>Contratar Encanador</option>
+        <option>Contratar Pintor</option><option>Terraplanagem</option>
+        <option>Construção Civil</option><option>Reformas</option><option>Outros</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Mensagem</label><textarea placeholder="Descreva sua necessidade, localização da obra, período..."></textarea></div>
+    <button class="btn-submit">📋 Enviar Orçamento</button>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <a href="#" class="logo" style="margin-bottom:16px;display:inline-flex;">
+        <div class="logo-icon">C</div>
+        <div><div class="logo-text">CONSTRU<span>MAX</span></div><span class="logo-sub">MÁQUINAS &amp; SERVIÇOS</span></div>
+      </a>
+      <p>A plataforma que conecta você com as melhores máquinas e profissionais para sua obra. Qualidade, segurança e eficiência em cada projeto.</p>
+      <div class="footer-social">
+        <a href="#" class="social-btn">f</a><a href="#" class="social-btn">ig</a>
+        <a href="#" class="social-btn">in</a><a href="#" class="social-btn">yt</a>
+      </div>
+    </div>
+    <div class="footer-col">
+      <h4>Navegação</h4>
+      <ul class="footer-links">
+        <li><a href="#inicio">Início</a></li><li><a href="#servicos">Serviços</a></li>
+        <li><a href="#maquinas">Máquinas</a></li><li><a href="#profissionais">Profissionais</a></li>
+        <li><a href="#sobre">Quem Somos</a></li><li><a href="#contato">Contato</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Serviços</h4>
+      <ul class="footer-links">
+        <li><a href="#">Construção Civil</a></li><li><a href="#">Terraplanagem</a></li>
+        <li><a href="#">Reformas</a></li><li><a href="#">Locação Máquinas</a></li>
+        <li><a href="#">Pedreiros</a></li><li><a href="#">Eletricistas</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Contato</h4>
+      <ul class="footer-links">
+        <li><a href="#">(13) 99999-9999</a></li><li><a href="#">contato@construmax.com.br</a></li>
+        <li><a href="#">Rua das Construções, 193</a></li><li><a href="#">Praia Grande – SP</a></li>
+        <li><a href="#">Seg–Sex: 8h às 18h</a></li><li><a href="#">Sábado: 8h às 12h</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>© 2024 CONSTRUMAX. Todos os direitos reservados.</p>
+    <p>Desenvolvido com <span>♥</span> para o seu success!</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
