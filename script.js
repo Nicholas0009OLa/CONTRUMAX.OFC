@@ -243,3 +243,83 @@ fetch("http://localhost:3000/prestadores")
 .catch(erro => {
     console.error("Erro ao buscar prestadores:", erro);
 });
+
+fetch("http://localhost:3000/prestadores")
+.then(res => res.json())
+.then(prestadores => {
+
+    const lista = document.getElementById("lista-profissionais");
+
+    lista.innerHTML = "";
+
+    prestadores.forEach(prestador => {
+
+        const iniciais = prestador.nome
+            .split(" ")
+            .map(nome => nome[0])
+            .slice(0, 2)
+            .join("");
+
+        lista.innerHTML += `
+            <div class="prof-card">
+
+                <div class="prof-verified">
+                    ✔ Verificado
+                </div>
+
+                <div class="prof-header">
+
+                    <div class="prof-avatar">
+                        ${iniciais}
+                    </div>
+
+                    <div class="prof-meta">
+                        <div class="prof-name">
+                            ${prestador.nome}
+                        </div>
+
+                        <div class="prof-role">
+                            ${prestador.profissao}
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="prof-stars">
+                    ⭐ ${prestador.avaliacao}
+                    <span>
+                        (${prestador.total_avaliacoes} avaliações)
+                    </span>
+                </div>
+
+                <div class="prof-tags">
+                    <span class="prof-tag">
+                        ${prestador.especialidade}
+                    </span>
+                </div>
+
+                <div class="prof-info">
+
+                    <div class="prof-location">
+                        📍 ${prestador.cidade} - ${prestador.estado}
+                    </div>
+
+                    <div class="prof-price">
+                        R$ ${prestador.valor_diaria}
+                        <small>/ dia</small>
+                    </div>
+
+                </div>
+
+                <button class="btn-prof-contact">
+                    Contratar
+                </button>
+
+            </div>
+        `;
+    });
+
+})
+.catch(erro => {
+    console.error("Erro:", erro);
+});
