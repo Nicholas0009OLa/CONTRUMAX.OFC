@@ -33,26 +33,176 @@ app.post('/cadastro', (req, res) => {
 
     console.log("Dados recebidos:", req.body);
 
-    const { nome, email, senha, telefone, tipo_usuario } = req.body;
+    const {
+        nome,
+        email,
+        senha,
+        telefone,
+        tipo_usuario,
+        cpf_cnpj,
+        profissao,
+        cidade,
+        estado,
+        valor_diaria,
+        descricao
+    } = req.body;
 
+    // Primeiro cadastra o usuário
     db.query(
+
         `INSERT INTO usuarios
         (nome, email, senha, telefone, tipo_usuario)
         VALUES (?, ?, ?, ?, ?)`,
-        [nome, email, senha, telefone, tipo_usuario],
+
+        [
+            nome,
+            email,
+            senha,
+            telefone,
+            tipo_usuario
+        ],
+
         (erro, resultado) => {
 
             if (erro) {
+
                 console.error("ERRO SQL:", erro);
-                return res.status(500).json(erro);
+
+                return res.status(500).json({
+                    sucesso: false,
+                    erro
+                });
+
+            }
+
+            const idUsuario = resultado.insertId;
+
+            // Se NÃO for profissional, encerra aqui
+            if (tipo_usuario !== "profissional") {
+
+                return res.json({
+                    sucesso: true,
+                    id: idUsuario
+                });
+
+            }
+
+            // Se for profissional, cadastra também na tabela prestadores
+            db.query(
+
+                `INSERT INTO prestadores
+                (
+                    id_usuario,
+                    cpf_cnpj,
+                    profissao,
+                    cidade,
+                    estado,
+                    valor_diaria,
+                    descricao
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+
+                [
+                    idUsuario,
+                    cpf_cnpj,
+                    profissao,
+                    cidade,
+                    estado,
+                    valor_diaria,
+                    descricao
+                ],
+
+                (erroPrestador) => {
+
+                    if (erroPrestador) {
+
+                        console.error("ERRO PRESTADOR:", erroPrestador);
+
+                        return res.status(500).json({
+                            sucesso: false,
+                            erro: erroPrestador
+                        });
+
+                    }
+
+                    res.json({
+                        sucesso: true,
+                        id: idUsuario
+                    });
+
+                }
+
+            );
+
+        }
+
+    );
+
+});
+// ===============================
+// CADASTRO DE PRESTADOR
+// ===============================
+
+app.post('/cadastro-prestador', (req, res) => {
+
+    console.log("Prestador recebido:", req.body);
+
+    const {
+        id_usuario,
+        cpf_cnpj,
+        profissao,
+        cidade,
+        estado,
+        valor_diaria,
+        descricao
+    } = req.body;
+
+    db.query(
+
+        `INSERT INTO prestadores
+        (
+            id_usuario,
+            cpf_cnpj,
+            profissao,
+            cidade,
+            estado,
+            valor_diaria,
+            descricao
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+
+        [
+            id_usuario,
+            cpf_cnpj,
+            profissao,
+            cidade,
+            estado,
+            valor_diaria,
+            descricao
+        ],
+
+        (erro, resultado) => {
+
+            if (erro) {
+
+                console.error(erro);
+
+                return res.status(500).json({
+                    sucesso: false,
+                    erro
+                });
+
             }
 
             res.json({
                 sucesso: true,
-                id: resultado.insertId
+                id_prestador: resultado.insertId
             });
+
         }
+
     );
+
 });
 app.post('/login', (req, res) => {
 

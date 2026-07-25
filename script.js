@@ -16,10 +16,32 @@
     document.getElementById('tab-' + tab).classList.add('active');
     document.getElementById('panel-' + tab).classList.add('active');
   }
-  function selectTipo(btn) {
-    document.querySelectorAll('.tipo-btn').forEach(b => b.classList.remove('selected'));
-    btn.classList.add('selected');
-  }
+  // funaçao dos campos do prestador
+ let tipoConta = "contratante";
+
+function selectTipo(btn){
+
+    document
+        .querySelectorAll(".tipo-btn")
+        .forEach(b => b.classList.remove("selected"));
+
+    btn.classList.add("selected");
+
+    if(btn.innerText.includes("Profissional")){
+
+        tipoConta = "profissional";
+
+        document.getElementById("camposProfissional").style.display = "block";
+
+    }else{
+
+        tipoConta = "contratante";
+
+        document.getElementById("camposProfissional").style.display = "none";
+
+    }
+
+}
 
   /* ── Chat Modal ─── */
   function openChat() {
@@ -90,20 +112,26 @@
 
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeChat(); } });
   
-  async function cadastrarUsuario() {
+ async function cadastrarUsuario() {
 
     const nome = document.getElementById("nome").value;
     const telefone = document.getElementById("telefone").value;
     const email = document.getElementById("email").value;
     const senha = document.getElementById("senha").value;
 
+    const tipo_usuario = tipoConta;
+
+
     const dados = {
-        nome: nome,
-        email: email,
-        senha: senha,
-        telefone: telefone,
-        tipo_usuario: "contratante"
+
+        nome,
+        telefone,
+        email,
+        senha,
+        tipo_usuario
+
     };
+
 
     try {
 
@@ -111,35 +139,127 @@
             "http://localhost:3000/cadastro",
             {
                 method: "POST",
+
                 headers: {
                     "Content-Type": "application/json"
                 },
+
                 body: JSON.stringify(dados)
+
             }
         );
 
+
         const resultado = await resposta.json();
+
 
         if(resultado.sucesso){
 
-    localStorage.setItem(
-        "usuario",
-        JSON.stringify({
-            id_usuario: resultado.id,
-            nome: nome,
-            email: email
-        })
-    );
 
-    closeModal();
+            localStorage.setItem(
+                "usuario",
 
-    verificarLogin();
+                JSON.stringify({
 
-}
+                    id_usuario: resultado.id,
+
+                    nome: nome,
+
+                    email: email
+
+                })
+            );
+
+
+            // Se for profissional, cadastra os dados extras
+
+            if(tipo_usuario === "profissional"){
+
+
+                const dadosProfissional = {
+
+
+                    id_usuario: resultado.id,
+
+                    cpf_cnpj:
+                    document.getElementById("cpfCnpj").value,
+
+
+                    profissao:
+                    document.getElementById("profissao").value,
+
+
+                    cidade:
+                    document.getElementById("cidade").value,
+
+
+                    estado:
+                    document.getElementById("estado").value,
+
+
+                    valor_diaria:
+                    document.getElementById("valorDiaria").value,
+
+
+                    descricao:
+                    document.getElementById("descricao").value
+
+                };
+
+
+                const respostaProfissional = await fetch(
+
+                    "http://localhost:3000/cadastro-prestador",
+
+                    {
+
+                        method:"POST",
+
+                        headers:{
+
+                            "Content-Type":"application/json"
+
+                        },
+
+                        body: JSON.stringify(dadosProfissional)
+
+                    }
+
+                );
+
+
+                const resultadoProfissional =
+                await respostaProfissional.json();
+
+
+                if(!resultadoProfissional.sucesso){
+
+                    alert("Usuário criado, mas erro nos dados profissionais.");
+
+                    return;
+
+                }
+
+
+            }
+
+
+            alert("Cadastro realizado com sucesso!");
+
+            closeModal();
+
+            verificarLogin();
+
+
+        }
+
 
     } catch(erro){
+
         console.error(erro);
+
         alert("Erro ao cadastrar.");
+
     }
 
 }
@@ -165,6 +285,8 @@ async function loginUsuario() {
         );
 
         const resultado = await resposta.json();
+        console.log("RETORNO CADASTRO:", resultado);
+        
 
        if (resultado.sucesso) {
 
@@ -232,17 +354,95 @@ function mostrarMenuUsuario() {
 
 verificarLogin();
 
+let todosPrestadores = [];
+
 fetch("http://localhost:3000/prestadores")
 .then(res => res.json())
-.then(dados => {
+.then(prestadores => {
 
-    console.log("PRESTADORES DO BANCO:");
-    console.log(dados);
+    todosPrestadores = prestadores;
+
+    renderizarPrestadores(prestadores);
 
 })
 .catch(erro => {
-    console.error("Erro ao buscar prestadores:", erro);
+    console.error("Erro:", erro);
 });
+
+// PARA BUSCAR PRESTADORES
+function renderizarPrestadores(prestadores) {
+
+    const lista = document.getElementById("lista-profissionais");
+
+    lista.innerHTML = "";
+
+    prestadores.forEach(prestador => {
+
+        const iniciais = prestador.nome
+            .split(" ")
+            .map(nome => nome[0])
+            .slice(0, 2)
+            .join("");
+
+        lista.innerHTML += `
+            <div class="prof-card">
+
+                <div class="prof-verified">
+                    ✔ Verificado
+                </div>
+
+                <div class="prof-header">
+
+                    <div class="prof-avatar">
+                        ${iniciais}
+                    </div>
+
+                    <div class="prof-meta">
+                        <div class="prof-name">
+                            ${prestador.nome}
+                        </div>
+
+                        <div class="prof-role">
+                            ${prestador.profissao}
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="prof-stars">
+                    ⭐ ${prestador.avaliacao}
+                    <span>
+                        (${prestador.total_avaliacoes} avaliações)
+                    </span>
+                </div>
+
+                <div class="prof-tags">
+                    <span class="prof-tag">
+                        ${prestador.especialidade}
+                    </span>
+                </div>
+
+                <div class="prof-info">
+
+                    <div class="prof-location">
+                        📍 ${prestador.cidade} - ${prestador.estado}
+                    </div>
+
+                    <div class="prof-price">
+                        R$ ${prestador.valor_diaria}
+                        <small>/ dia</small>
+                    </div>
+
+                </div>
+
+                <button class="btn-prof-contact">
+                    Contratar
+                </button>
+
+            </div>
+        `;
+    });
+}
 
 fetch("http://localhost:3000/prestadores")
 .then(res => res.json())
@@ -323,3 +523,31 @@ fetch("http://localhost:3000/prestadores")
 .catch(erro => {
     console.error("Erro:", erro);
 });
+
+document.addEventListener("input", (e) => {
+
+    if (e.target.id === "buscaProfissional") {
+
+        const busca = e.target.value.toLowerCase();
+
+        const filtrados = todosPrestadores.filter(prestador => {
+
+            const nome = (prestador.nome || "").toLowerCase();
+            const profissao = (prestador.profissao || "").toLowerCase();
+            const cidade = (prestador.cidade || "").toLowerCase();
+
+            return (
+                nome.includes(busca) ||
+                profissao.includes(busca) ||
+                cidade.includes(busca)
+            );
+
+        });
+
+        renderizarPrestadores(filtrados);
+
+    }
+
+});
+
+document.getElementById("camposProfissional").style.display = "none";

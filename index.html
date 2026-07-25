@@ -57,23 +57,91 @@
       <div class="modal-switch">Não tem conta? <a onclick="switchTab('cadastro')">Criar agora</a></div>
     </div>
     <div class="modal-panel" id="panel-cadastro">
-      <div class="modal-tipo-label">Tipo de conta</div>
-      <div class="tipo-btns">
-        <button class="tipo-btn selected" onclick="selectTipo(this)"><span class="tipo-icon">🏗️</span> Contratante</button>
-        <button class="tipo-btn" onclick="selectTipo(this)"><span class="tipo-icon">👷</span> Profissional</button>
-      </div>
-      <div class="modal-row">
-        <div class="mform-group"><label>Nome</label><input type="text" id="nome" placeholder="Seu nome"></div>
-        <div class="mform-group"><label>Telefone</label><input type="text" id="telefone" placeholder="(00) 00000-0000"></div>
-      </div>
-      <div class="mform-group"><label>E-mail</label><input type="email" id="email" placeholder="seu@email.com"></div>
-      <div class="mform-group"><label>Senha</label><input type="password" id="senha" placeholder="Mínimo 8 caracteres"></div>
-      <div class="mform-group"><label>Cidade / Estado</label><input type="text" placeholder="Ex: Praia Grande, SP"></div>
-      <button class="btn-modal-submit" onclick="cadastrarUsuario()">
-    Criar minha conta
-</button>
-      <div class="modal-switch">Já tem conta? <a onclick="switchTab('login')">Entrar</a></div>
+
+    <div class="modal-tipo-label">Tipo de conta</div>
+
+    <div class="tipo-btns">
+        <button class="tipo-btn selected" onclick="selectTipo(this)">
+            <span class="tipo-icon">🏗️</span> Contratante
+        </button>
+
+        <button class="tipo-btn" onclick="selectTipo(this)">
+            <span class="tipo-icon">👷</span> Profissional
+        </button>
     </div>
+
+    <div class="modal-row">
+
+        <div class="mform-group">
+            <label>Nome</label>
+            <input type="text" id="nome">
+        </div>
+
+        <div class="mform-group">
+            <label>Telefone</label>
+            <input type="text" id="telefone">
+        </div>
+
+    </div>
+
+    <div class="mform-group">
+        <label>E-mail</label>
+        <input type="email" id="email">
+    </div>
+
+    <div class="mform-group">
+        <label>Senha</label>
+        <input type="password" id="senha">
+    </div>
+
+    <div id="camposProfissional" style="display:none;">
+
+        <div class="mform-group">
+            <label>CPF/CNPJ</label>
+            <input type="text" id="cpfCnpj">
+        </div>
+
+        <div class="mform-group">
+            <label>Profissão</label>
+            <input type="text" id="profissao">
+        </div>
+
+        <div class="modal-row">
+
+            <div class="mform-group">
+                <label>Cidade</label>
+                <input type="text" id="cidade">
+            </div>
+
+            <div class="mform-group">
+                <label>Estado</label>
+                <input type="text" id="estado">
+            </div>
+
+        </div>
+
+        <div class="mform-group">
+            <label>Valor da diária</label>
+            <input type="number" id="valorDiaria">
+        </div>
+
+        <div class="mform-group">
+            <label>Descrição</label>
+            <textarea id="descricao"></textarea>
+        </div>
+
+    </div>
+
+    <button class="btn-modal-submit" onclick="cadastrarUsuario()">
+        Criar minha conta
+    </button>
+
+    <div class="modal-switch">
+        Já tem conta?
+        <a onclick="switchTab('login')">Entrar</a>
+    </div>
+
+</div>
   </div>
 </div>
 
@@ -262,6 +330,18 @@
     </div>
     <p class="section-sub">Conectamos você com pedreiros, eletricistas, encanadores, pintores e mais — todos verificados.</p>
   </div>
+  <div style="margin-bottom:30px;">
+    <input
+        type="text"
+        id="buscaProfissional"
+        placeholder="Buscar profissão ou cidade..."
+        style="
+            width:100%;
+            padding:15px;
+            font-size:16px;
+        "
+    >
+</div>
   <div class="prof-grid" id="lista-profissionais">
   </div>
   <div style="text-align:center;margin-top:40px;">
