@@ -270,6 +270,43 @@ app.get('/prestadores', (req, res) => {
 
 });
 
+app.get("/equipamentos", (req, res) => {
+
+    db.query(
+
+        `SELECT
+            e.*,
+            u.nome,
+            p.cidade,
+            p.estado
+        FROM equipamentos e
+
+        INNER JOIN prestadores p
+            ON e.id_prestador = p.id_prestador
+
+        INNER JOIN usuarios u
+            ON p.id_usuario = u.id_usuario`,
+
+        (erro, resultado) => {
+
+            if (erro) {
+
+                console.error(erro);
+
+                return res.status(500).json({
+                    sucesso: false
+                });
+
+            }
+
+            res.json(resultado);
+
+        }
+
+    );
+
+});
+
 
 
 app.listen(3000, () => {

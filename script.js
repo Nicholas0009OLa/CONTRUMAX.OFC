@@ -550,4 +550,92 @@ document.addEventListener("input", (e) => {
 
 });
 
+//EQUIPAMENTOS
+
+
 document.getElementById("camposProfissional").style.display = "none";
+
+let todosEquipamentos = [];
+
+fetch("http://localhost:3000/equipamentos")
+.then(res => res.json())
+.then(equipamentos => {
+
+    todosEquipamentos = equipamentos;
+
+    renderizarEquipamentos(equipamentos);
+
+})
+.catch(erro => {
+
+    console.error("Erro equipamentos:", erro);
+
+});
+
+function renderizarEquipamentos(equipamentos){
+
+    const lista = document.getElementById("lista-equipamentos");
+
+    lista.innerHTML = "";
+
+    equipamentos.forEach(equipamento => {
+
+        lista.innerHTML += `
+
+        <div class="machine-card">
+
+            <div class="machine-info">
+
+                <h3>${equipamento.nome_equipamento}</h3>
+
+                <ul class="machine-features">
+
+                    <li>👤 ${equipamento.nome}</li>
+
+                    <li>📍 ${equipamento.cidade} - ${equipamento.estado}</li>
+
+                    <li>💰 R$ ${equipamento.valor_diaria}/dia</li>
+
+                    <li>📦 Quantidade: ${equipamento.quantidade}</li>
+
+                </ul>
+
+                <button class="btn-quote">
+                    Alugar
+                </button>
+
+            </div>
+
+        </div>
+
+        `;
+
+    });
+
+}
+
+// FILTRO DE EQUIPAMENTOS
+
+document.addEventListener("input", (e) => {
+
+    if (e.target.id === "buscaEquipamento") {
+
+        const busca = e.target.value.toLowerCase();
+
+        const filtrados = todosEquipamentos.filter(equipamento =>
+
+            (equipamento.nome_equipamento || "").toLowerCase().includes(busca) ||
+
+            (equipamento.tipo_equipamento || "").toLowerCase().includes(busca) ||
+
+            (equipamento.nome || "").toLowerCase().includes(busca) ||
+
+            (equipamento.cidade || "").toLowerCase().includes(busca)
+
+        );
+
+        renderizarEquipamentos(filtrados);
+
+    }
+
+});

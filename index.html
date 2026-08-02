@@ -305,21 +305,38 @@
 </section>
 
 <section class="machines" id="maquinas">
+
   <div class="section-header">
     <div>
       <div class="section-label">Locação de Máquinas</div>
-      <h2 class="section-title" style="color:var(--white);">Os melhores equipamentos<br>para sua obra</h2>
+      <h2 class="section-title" style="color:var(--white);">
+        Os melhores equipamentos<br>para sua obra
+      </h2>
     </div>
-    <p class="section-sub" style="color:#888;">Linha completa de máquinas para obras de todos os portes.</p>
+
+    <p class="section-sub" style="color:#888;">
+      Linha completa de máquinas para obras de todos os portes.
+    </p>
   </div>
-  <div class="machines-grid">
-    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1565008447742-97f6f38c985c?w=600&q=80" alt="Retroescavadeira"><div class="machine-info"><h3>Retroescavadeira</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
-    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&q=80" alt="Escavadeira"><div class="machine-info"><h3>Escavadeira Hidráulica</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
-    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=80" alt="Mini Escavadeira"><div class="machine-info"><h3>Mini Escavadeira</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
-    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=600&q=80" alt="Bobcat"><div class="machine-info"><h3>Bobcat</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
-    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1573152958734-1922c188fba3?w=600&q=80" alt="Compactador"><div class="machine-info"><h3>Rolo Compactador</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
-    <div class="machine-card"><img class="machine-img" src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=600&q=80" alt="Caminhão"><div class="machine-info"><h3>Caminhão Basculante</h3><ul class="machine-features"><li>Operador especializado</li><li>Diária, semanal ou mensal</li><li>Manutenção em dia</li></ul><button class="btn-quote" onclick="document.querySelector('#contato').scrollIntoView({behavior:'smooth'})">Solicitar Cotação</button></div></div>
+  <div style="margin-bottom:30px;">
+
+    <input
+        type="text"
+        id="buscaEquipamento"
+        placeholder="Buscar equipamento ou tipo..."
+        style="
+            width:100%;
+            padding:15px;
+            font-size:16px;
+        "
+    >
+
+</div>
+
+  <div class="machines-grid" id="lista-equipamentos">
+
   </div>
+
 </section>
 
 <section class="professionals" id="profissionais">
