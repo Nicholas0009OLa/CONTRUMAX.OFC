@@ -639,3 +639,119 @@ document.addEventListener("input", (e) => {
     }
 
 });
+async function cadastrarEquipamento() {
+
+    const usuario = JSON.parse(
+        localStorage.getItem("usuario")
+    );
+
+    if (!usuario) {
+        alert("Você precisa estar logado para cadastrar um equipamento.");
+        openModal("login");
+        return;
+    }
+
+    const nome_equipamento =
+        document.getElementById("nomeEquipamento").value;
+
+    const tipo_equipamento =
+        document.getElementById("tipoEquipamento").value;
+
+    const descricao =
+        document.getElementById("descricaoEquipamento").value;
+
+    const valor_diaria =
+        document.getElementById("valorDiariaEquipamento").value;
+
+    const quantidade =
+        document.getElementById("quantidadeEquipamento").value;
+
+
+    if (
+        !nome_equipamento ||
+        !tipo_equipamento ||
+        !valor_diaria ||
+        !quantidade
+    ) {
+        alert("Preencha todos os campos obrigatórios.");
+        return;
+    }
+
+
+    const dados = {
+        id_usuario: usuario.id_usuario,
+        nome_equipamento: nome_equipamento,
+        tipo_equipamento: tipo_equipamento,
+        descricao: descricao,
+        valor_diaria: valor_diaria,
+        quantidade: quantidade
+    };
+
+
+    try {
+
+        const resposta = await fetch(
+            "http://localhost:3000/cadastro-equipamento",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify(dados)
+            }
+        );
+
+
+        const resultado = await resposta.json();
+
+
+        if (resultado.sucesso) {
+
+            alert("Equipamento cadastrado com sucesso!");
+
+            document.getElementById("nomeEquipamento").value = "";
+            document.getElementById("tipoEquipamento").value = "";
+            document.getElementById("descricaoEquipamento").value = "";
+            document.getElementById("valorDiariaEquipamento").value = "";
+            document.getElementById("quantidadeEquipamento").value = "";
+
+            fecharCadastroEquipamento();
+
+            // Atualiza a lista de equipamentos
+            location.reload();
+
+        } else {
+
+            alert(
+                resultado.mensagem ||
+                "Erro ao cadastrar equipamento."
+            );
+
+        }
+
+    } catch (erro) {
+
+        console.error("ERRO AO CADASTRAR EQUIPAMENTO:", erro);
+
+        alert("Não foi possível conectar com o servidor.");
+
+    }
+
+}
+function abrirCadastroEquipamento() {
+    const formulario = document.getElementById("formularioEquipamento");
+
+    if (formulario) {
+        formulario.style.display = "block";
+    }
+}
+
+function fecharCadastroEquipamento() {
+    const formulario = document.getElementById("formularioEquipamento");
+
+    if (formulario) {
+        formulario.style.display = "none";
+    }
+}
