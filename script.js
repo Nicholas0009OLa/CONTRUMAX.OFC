@@ -572,7 +572,8 @@ fetch("http://localhost:3000/equipamentos")
 
 });
 
-function renderizarEquipamentos(equipamentos){
+
+function renderizarEquipamentos(equipamentos) {
 
     const lista = document.getElementById("lista-equipamentos");
 
@@ -580,24 +581,69 @@ function renderizarEquipamentos(equipamentos){
 
     equipamentos.forEach(equipamento => {
 
+        const fotos = equipamento.fotos || [];
+
+        const idCarrossel = `carrossel-${equipamento.id_equipamento}`;
+
+        const imagemInicial = fotos.length > 0
+            ? `http://localhost:3000${fotos[0]}`
+            : "";
+
         lista.innerHTML += `
 
         <div class="machine-card">
+
+            <div class="machine-gallery" id="${idCarrossel}">
+
+                ${
+                    fotos.length > 0
+                    ? `
+                        <img
+                            class="machine-photo"
+                            src="${imagemInicial}"
+                            alt="${equipamento.nome_equipamento}"
+                        >
+
+                        ${
+                            fotos.length > 1
+                            ? `
+                                <button
+                                    type="button"
+                                    class="photo-arrow photo-prev"
+                                    onclick="mudarFoto(${equipamento.id_equipamento}, -1)"
+                                >❮</button>
+
+                                <button
+                                    type="button"
+                                    class="photo-arrow photo-next"
+                                    onclick="mudarFoto(${equipamento.id_equipamento}, 1)"
+                                >❯</button>
+
+                                <span class="photo-counter" id="contador-${equipamento.id_equipamento}">
+                                    1/${fotos.length}
+                                </span>
+                            `
+                            : ""
+                        }
+                    `
+                    : `
+                        <div class="machine-no-photo">
+                            📷 Sem fotos disponíveis
+                        </div>
+                    `
+                }
+
+            </div>
 
             <div class="machine-info">
 
                 <h3>${equipamento.nome_equipamento}</h3>
 
                 <ul class="machine-features">
-
                     <li>👤 ${equipamento.nome}</li>
-
                     <li>📍 ${equipamento.cidade} - ${equipamento.estado}</li>
-
                     <li>💰 R$ ${equipamento.valor_diaria}/dia</li>
-
                     <li>📦 Quantidade: ${equipamento.quantidade}</li>
-
                 </ul>
 
                 <button class="btn-quote">
@@ -613,6 +659,45 @@ function renderizarEquipamentos(equipamentos){
     });
 
 }
+
+
+function mudarFoto(idEquipamento, direcao) {
+
+    const equipamento = todosEquipamentos.find(
+        item => item.id_equipamento == idEquipamento
+    );
+
+    if (!equipamento || !equipamento.fotos || equipamento.fotos.length < 2) {
+        return;
+    }
+
+    const galeria = document.getElementById(
+        `carrossel-${idEquipamento}`
+    );
+
+    const imagem = galeria.querySelector(".machine-photo");
+
+    const contador = document.getElementById(
+        `contador-${idEquipamento}`
+    );
+
+    let indiceAtual = Number(
+        galeria.dataset.indice || 0
+    );
+
+    indiceAtual =
+        (indiceAtual + direcao + equipamento.fotos.length)
+        % equipamento.fotos.length;
+
+    galeria.dataset.indice = indiceAtual;
+
+    imagem.src =
+        `http://localhost:3000${equipamento.fotos[indiceAtual]}`;
+
+    contador.textContent =
+        `${indiceAtual + 1}/${equipamento.fotos.length}`;
+}
+
 
 // FILTRO DE EQUIPAMENTOS
 
@@ -651,6 +736,7 @@ async function cadastrarEquipamento() {
         return;
     }
 
+
     const nome_equipamento =
         document.getElementById("nomeEquipamento").value;
 
@@ -678,14 +764,35 @@ async function cadastrarEquipamento() {
     }
 
 
-    const dados = {
-        id_usuario: usuario.id_usuario,
-        nome_equipamento: nome_equipamento,
-        tipo_equipamento: tipo_equipamento,
-        descricao: descricao,
-        valor_diaria: valor_diaria,
-        quantidade: quantidade
-    };
+    // ===============================
+    // CRIAR FORM DATA
+    // ===============================
+
+    const dados = new FormData();
+
+    dados.append("id_usuario", usuario.id_usuario);
+    dados.append("nome_equipamento", nome_equipamento);
+    dados.append("tipo_equipamento", tipo_equipamento);
+    dados.append("descricao", descricao);
+    dados.append("valor_diaria", valor_diaria);
+    dados.append("quantidade", quantidade);
+
+
+    // ===============================
+    // ADICIONAR AS FOTOS
+    // ===============================
+
+    fotosSelecionadas.forEach((foto) => {
+        dados.append("fotos", foto);
+    });
+
+
+    console.log(
+        "Quantidade de fotos enviadas:",
+        fotosSelecionadas.length
+    );
+
+    console.log("FOTOS:", fotosSelecionadas);
 
 
     try {
@@ -694,12 +801,7 @@ async function cadastrarEquipamento() {
             "http://localhost:3000/cadastro-equipamento",
             {
                 method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json"
-                },
-
-                body: JSON.stringify(dados)
+                body: dados
             }
         );
 
@@ -709,7 +811,13 @@ async function cadastrarEquipamento() {
 
         if (resultado.sucesso) {
 
-            alert("Equipamento cadastrado com sucesso!");
+            alert(
+                `Equipamento cadastrado com sucesso!\n` +
+                `Fotos enviadas: ${resultado.quantidade_fotos}`
+            );
+
+
+            // Limpar campos
 
             document.getElementById("nomeEquipamento").value = "";
             document.getElementById("tipoEquipamento").value = "";
@@ -717,9 +825,19 @@ async function cadastrarEquipamento() {
             document.getElementById("valorDiariaEquipamento").value = "";
             document.getElementById("quantidadeEquipamento").value = "";
 
+
+            // Limpar fotos selecionadas
+
+            fotosSelecionadas = [];
+
+            atualizarPreviewFotos();
+
+
             fecharCadastroEquipamento();
 
-            // Atualiza a lista de equipamentos
+
+            // Atualizar lista
+
             location.reload();
 
         } else {
@@ -733,9 +851,14 @@ async function cadastrarEquipamento() {
 
     } catch (erro) {
 
-        console.error("ERRO AO CADASTRAR EQUIPAMENTO:", erro);
+        console.error(
+            "ERRO AO CADASTRAR EQUIPAMENTO:",
+            erro
+        );
 
-        alert("Não foi possível conectar com o servidor.");
+        alert(
+            "Não foi possível conectar com o servidor."
+        );
 
     }
 
@@ -755,3 +878,197 @@ function fecharCadastroEquipamento() {
         formulario.style.display = "none";
     }
 }
+
+let fotosSelecionadas = [];
+
+document.getElementById("fotosEquipamento").addEventListener("change", function () {
+
+    const novasFotos = Array.from(this.files);
+
+    if (fotosSelecionadas.length + novasFotos.length > 5) {
+        alert("Você pode selecionar no máximo 5 fotos.");
+        this.value = "";
+        return;
+    }
+
+    fotosSelecionadas = fotosSelecionadas.concat(novasFotos);
+
+    this.value = "";
+
+    atualizarPreviewFotos();
+});
+
+
+function atualizarPreviewFotos() {
+
+    const contador = document.getElementById("contadorFotos");
+    const preview = document.getElementById("previewFotos");
+
+    contador.textContent =
+        `📸 ${fotosSelecionadas.length}/5 fotos selecionadas`;
+
+    preview.innerHTML = "";
+
+    fotosSelecionadas.forEach((foto, index) => {
+
+        const div = document.createElement("div");
+
+        div.style.position = "relative";
+        div.style.width = "100px";
+        div.style.height = "100px";
+
+        div.innerHTML = `
+            <img
+                src="${URL.createObjectURL(foto)}"
+                style="
+                    width: 100px;
+                    height: 100px;
+                    object-fit: cover;
+                    border-radius: 8px;
+                "
+            >
+
+            <button
+                type="button"
+                onclick="removerFoto(${index})"
+                style="
+                    position: absolute;
+                    top: 5px;
+                    right: 5px;
+                    width: 24px;
+                    height: 24px;
+                    border: none;
+                    border-radius: 50%;
+                    background: #000;
+                    color: #fff;
+                    cursor: pointer;
+                    font-weight: bold;
+                "
+            >
+                ×
+            </button>
+        `;
+
+        preview.appendChild(div);
+    });
+}
+function removerFoto(index) {
+
+    fotosSelecionadas.splice(index, 1);
+
+    atualizarPreviewFotos();
+}
+
+
+
+const modalFoto = document.getElementById("modalFoto");
+const imagemAmpliada = document.getElementById("imagemAmpliada");
+const fecharModalFoto = document.getElementById("fecharModalFoto");
+const fotoAnterior = document.getElementById("fotoAnterior");
+const proximaFoto = document.getElementById("proximaFoto");
+const contadorModalFoto = document.getElementById("contadorModalFoto");
+
+let equipamentoAmpliado = null;
+let indiceFotoAmpliada = 0;
+
+function atualizarFotoAmpliada() {
+
+    if (!equipamentoAmpliado) return;
+
+    const fotos = equipamentoAmpliado.fotos || [];
+
+    if (fotos.length === 0) return;
+
+    imagemAmpliada.src =
+        `http://localhost:3000${fotos[indiceFotoAmpliada]}`;
+
+    contadorModalFoto.textContent =
+        `${indiceFotoAmpliada + 1}/${fotos.length}`;
+
+    const mostrarSetas = fotos.length > 1;
+
+    fotoAnterior.style.display = mostrarSetas ? "block" : "none";
+    proximaFoto.style.display = mostrarSetas ? "block" : "none";
+
+    contadorModalFoto.style.display =
+        mostrarSetas ? "block" : "none";
+}
+
+function trocarFotoAmpliada(direcao) {
+
+    if (!equipamentoAmpliado) return;
+
+    const fotos = equipamentoAmpliado.fotos || [];
+
+    if (fotos.length < 2) return;
+
+    indiceFotoAmpliada =
+        (indiceFotoAmpliada + direcao + fotos.length) % fotos.length;
+
+    atualizarFotoAmpliada();
+}
+
+function fecharFotoAmpliada() {
+
+    modalFoto.classList.remove("ativo");
+    imagemAmpliada.src = "";
+    equipamentoAmpliado = null;
+    indiceFotoAmpliada = 0;
+}
+
+// Abre a galeria ao clicar na foto de um card
+document.addEventListener("click", function(evento) {
+
+    if (!evento.target.classList.contains("machine-photo")) {
+        return;
+    }
+
+    const galeria = evento.target.closest(".machine-gallery");
+
+    if (!galeria) return;
+
+    const idEquipamento = galeria.id.replace("carrossel-", "");
+
+    equipamentoAmpliado = todosEquipamentos.find(
+        item => String(item.id_equipamento) === idEquipamento
+    );
+
+    if (!equipamentoAmpliado || !equipamentoAmpliado.fotos?.length) {
+        return;
+    }
+
+    indiceFotoAmpliada = Number(galeria.dataset.indice || 0);
+
+    modalFoto.classList.add("ativo");
+    atualizarFotoAmpliada();
+});
+
+fotoAnterior.addEventListener("click", function() {
+    trocarFotoAmpliada(-1);
+});
+
+proximaFoto.addEventListener("click", function() {
+    trocarFotoAmpliada(1);
+});
+
+fecharModalFoto.addEventListener("click", fecharFotoAmpliada);
+
+modalFoto.addEventListener("click", function(evento) {
+    if (evento.target === modalFoto) {
+        fecharFotoAmpliada();
+    }
+});
+
+// Teclado: Esc fecha; setas navegam
+document.addEventListener("keydown", function(evento) {
+
+    if (!modalFoto.classList.contains("ativo")) return;
+
+    if (evento.key === "Escape") {
+        fecharFotoAmpliada();
+    } else if (evento.key === "ArrowLeft") {
+        trocarFotoAmpliada(-1);
+    } else if (evento.key === "ArrowRight") {
+        trocarFotoAmpliada(1);
+    }
+});

@@ -1407,7 +1407,41 @@
             min="1">
 
         </div>
+      
+          <div class="form-group">
+              <label for="fotosEquipamento">Fotos do equipamento</label>
+              <input
+                  type="file"
+                  id="fotosEquipamento"
+                  accept="image/*"
+                  multiple
+              >
+              
+                <small>Selecione até 5 fotos.</small>
 
+                <div id="contadorFotos" style="margin-top: 10px;">
+                  📸 0/5 fotos selecionadas
+                </div>
+                <div
+                    id="previewFotos"
+                    style="
+                        display: flex;
+                        gap: 10px;
+                        flex-wrap: wrap;
+                        margin-top: 15px;
+                    "
+                ></div>
+
+            
+            
+            
+            
+            </div>
+
+
+        
+
+      
       </div>
 
 
@@ -2308,6 +2342,42 @@
 
 </footer>
 
+
+
+<div id="modalFoto" class="modal-foto">
+
+    <button
+        type="button"
+        id="fecharModalFoto"
+        class="fechar-modal-foto"
+        aria-label="Fechar imagem"
+    >×</button>
+
+    <button
+        type="button"
+        id="fotoAnterior"
+        class="seta-modal seta-modal-esquerda"
+        aria-label="Foto anterior"
+    >❮</button>
+
+    <img
+        id="imagemAmpliada"
+        src=""
+        alt="Foto ampliada do equipamento"
+    >
+
+    <button
+        type="button"
+        id="proximaFoto"
+        class="seta-modal seta-modal-direita"
+        aria-label="Próxima foto"
+    >❯</button>
+
+    <span id="contadorModalFoto" class="contador-modal-foto">
+        1/1
+    </span>
+
+</div>
 
 
 <!-- SCRIPT PRINCIPAL -->
