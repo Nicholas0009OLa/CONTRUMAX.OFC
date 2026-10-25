@@ -52,6 +52,43 @@ const upload = multer({
     }
 });
 
+const pastaUploadsPrestadores = path.join(__dirname, 'uploads', 'prestadores');
+
+if (!fs.existsSync(pastaUploadsPrestadores)) {
+    fs.mkdirSync(pastaUploadsPrestadores, { recursive: true });
+}
+
+const storagePrestadores = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, pastaUploadsPrestadores);
+    },
+    filename: function (req, file, cb) {
+        const nomeUnico =
+            Date.now() +
+            '-' +
+            Math.round(Math.random() * 1E9) +
+            path.extname(file.originalname);
+
+        cb(null, nomeUnico);
+    }
+});
+
+const uploadPrestadores = multer({
+    storage: storagePrestadores,
+    limits: {
+        files: 5,
+        fileSize: 5 * 1024 * 1024
+    },
+    fileFilter: function (req, file, cb) {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Apenas imagens são permitidas.'));
+        }
+    }
+});
+
+
 app.use(cors());
 app.use(express.json());
 
@@ -170,78 +207,53 @@ app.post('/cadastro', (req, res) => {
 // CADASTRO DE PRESTADOR
 // ===============================
 
-app.post('/cadastro-prestador', (req, res) => {
 
-    console.log("PRESTADOR RECEBIDO:", req.body);
+app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) => {
+    console.log("BODY:", req.body);
+console.log("FILES:", req.files);
+console.log("CONTENT TYPE:", req.headers["content-type"]);
 
-    const {
-        id_usuario,
-        cpf_cnpj,
-        profissao,
-        cidade,
-        estado,
-        valor_diaria,
-        descricao
-    } = req.body;
+if (!req.body) {
+    return res.status(400).json({
+        sucesso: false,
+        erro: "O Multer não recebeu os dados do formulário."
+    });
+}
 
+const {
+    id_usuario,
+    cpf_cnpj,
+    profissao,
+    cidade,
+    estado,
+    valor_diaria,
+    descricao
+} = req.body;
 
-    // Verifica se o usuário já possui
-    // um cadastro de prestador
     db.query(
-
-        `SELECT id_prestador
-         FROM prestadores
-         WHERE id_usuario = ?`,
-
+        `SELECT id_prestador FROM prestadores WHERE id_usuario = ?`,
         [id_usuario],
-
         (erroBusca, resultadoBusca) => {
-
             if (erroBusca) {
-
-                console.error(
-                    "ERRO AO VERIFICAR PRESTADOR:",
-                    erroBusca
-                );
-
+                console.error("ERRO AO VERIFICAR PRESTADOR:", erroBusca);
                 return res.status(500).json({
                     sucesso: false,
-                    erro: erroBusca
+                    erro: erroBusca.message
                 });
             }
 
-
-            // Se já existir, não cadastra novamente
             if (resultadoBusca.length > 0) {
-
-                console.log(
-                    "Prestador já cadastrado. Não será duplicado."
-                );
-
                 return res.json({
                     sucesso: true,
                     id_prestador: resultadoBusca[0].id_prestador,
                     ja_existia: true
                 });
-
             }
 
-
-            // Se não existir, cadastra
             db.query(
-
                 `INSERT INTO prestadores
-                (
-                    id_usuario,
-                    cpf_cnpj,
-                    profissao,
-                    cidade,
-                    estado,
-                    valor_diaria,
-                    descricao
-                )
+                (id_usuario, cpf_cnpj, profissao, cidade, estado, valor_diaria, descricao)
                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-
                 [
                     id_usuario,
                     cpf_cnpj,
@@ -251,38 +263,77 @@ app.post('/cadastro-prestador', (req, res) => {
                     valor_diaria,
                     descricao
                 ],
-
                 (erro, resultado) => {
-
                     if (erro) {
-
-                        console.error(
-                            "ERRO PRESTADOR:",
-                            erro
-                        );
-
+                        console.error("ERRO PRESTADOR:", erro);
                         return res.status(500).json({
                             sucesso: false,
-                            erro
+                            erro: erro.message
                         });
                     }
 
+                    const idPrestador = resultado.insertId;
+                    const fotos = req.files || [];
 
-                    res.json({
-                        sucesso: true,
-                        id_prestador: resultado.insertId,
-                        ja_existia: false
+                    if (fotos.length === 0) {
+                        return res.json({
+                            sucesso: true,
+                            id_prestador: idPrestador,
+                            ja_existia: false,
+                            quantidade_fotos: 0
+                        });
+                    }
+
+                    let fotosSalvas = 0;
+                    let houveErro = false;
+
+                    fotos.forEach((foto) => {
+                        const caminhoFoto =
+                            `/uploads/prestadores/${foto.filename}`;
+
+                        db.query(
+                            `INSERT INTO fotos_prestadores
+                            (id_prestador, url_foto)
+                            VALUES (?, ?)`,
+                            [idPrestador, caminhoFoto],
+                            (erroFoto) => {
+                                if (erroFoto) {
+                                    console.error("ERRO AO SALVAR FOTO:", erroFoto);
+
+                                    if (!houveErro) {
+                                        houveErro = true;
+                                        return res.status(500).json({
+                                            sucesso: false,
+                                            erro: erroFoto.message,
+                                            mensagem: "Prestador cadastrado, mas houve erro ao salvar as fotos."
+                                        });
+                                    }
+
+                                    return;
+                                }
+
+                                fotosSalvas++;
+
+                                if (
+                                    fotosSalvas === fotos.length &&
+                                    !houveErro
+                                ) {
+                                    return res.json({
+                                        sucesso: true,
+                                        id_prestador: idPrestador,
+                                        ja_existia: false,
+                                        quantidade_fotos: fotosSalvas
+                                    });
+                                }
+                            }
+                        );
                     });
-
                 }
-
             );
-
         }
-
     );
-
 });
+
 
 
 // ===============================
@@ -359,16 +410,26 @@ app.post('/login', (req, res) => {
 // LISTAR PRESTADORES
 // ===============================
 
+
 app.get('/prestadores', (req, res) => {
 
     db.query(
-
         `
         SELECT
             p.*,
             u.nome,
             u.telefone,
-            e.nome AS especialidade
+            e.nome AS especialidade,
+
+            (
+                SELECT GROUP_CONCAT(
+                    f.url_foto
+                    ORDER BY f.id_foto
+                    SEPARATOR '|||'
+                )
+                FROM fotos_prestadores f
+                WHERE f.id_prestador = p.id_prestador
+            ) AS fotos
 
         FROM prestadores p
 
@@ -385,26 +446,27 @@ app.get('/prestadores', (req, res) => {
         (erro, resultado) => {
 
             if (erro) {
-
-                console.error(
-                    "ERRO PRESTADORES:",
-                    erro
-                );
+                console.error("ERRO PRESTADORES:", erro);
 
                 return res.status(500).json({
                     sucesso: false,
-                    erro
+                    erro: erro.message
                 });
             }
 
+            const prestadores = resultado.map(prestador => ({
+                ...prestador,
+                fotos: prestador.fotos
+                    ? prestador.fotos.split('|||')
+                    : []
+            }));
 
-            res.json(resultado);
-
+            res.json(prestadores);
         }
-
     );
 
 });
+
 
 
 // ===============================
