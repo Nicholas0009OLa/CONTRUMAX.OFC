@@ -150,13 +150,10 @@ app.post('/cadastro', (req, res) => {
         nome,
         email,
         senha,
-        telefone,
-        tipo_usuario
+        telefone
     } = req.body;
 
-
     db.query(
-
         `INSERT INTO usuarios
         (
             nome,
@@ -172,24 +169,21 @@ app.post('/cadastro', (req, res) => {
             email,
             senha,
             telefone,
-            tipo_usuario
+            'CLIENTE'
         ],
 
         (erro, resultado) => {
 
             if (erro) {
-
                 console.error("ERRO SQL CADASTRO:", erro);
 
                 return res.status(500).json({
                     sucesso: false,
-                    erro
+                    erro: erro.message
                 });
             }
 
-
             const idUsuario = resultado.insertId;
-
 
             res.json({
                 sucesso: true,
@@ -197,7 +191,6 @@ app.post('/cadastro', (req, res) => {
             });
 
         }
-
     );
 
 });
@@ -208,130 +201,74 @@ app.post('/cadastro', (req, res) => {
 // ===============================
 
 
-app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) => {
-    console.log("BODY:", req.body);
-console.log("FILES:", req.files);
-console.log("CONTENT TYPE:", req.headers["content-type"]);
+app.post('/cadastro', (req, res) => {
 
-if (!req.body) {
-    return res.status(400).json({
-        sucesso: false,
-        erro: "O Multer não recebeu os dados do formulário."
-    });
-}
+    console.log("DADOS RECEBIDOS:", req.body);
 
-const {
-    id_usuario,
-    cpf_cnpj,
-    profissao,
-    cidade,
-    estado,
-    valor_diaria,
-    descricao
-} = req.body;
+    const {
+        nome,
+        email,
+        senha,
+        telefone,
+        tipo_usuario
+    } = req.body;
+
+    // Converte o tipo recebido para o padrão do banco
+    const tipoRecebido = String(tipo_usuario || "").trim().toLowerCase();
+
+    let tipoBanco;
+
+    if (tipoRecebido === "contratante" || tipoRecebido === "cliente") {
+        tipoBanco = "CLIENTE";
+    } else if (tipoRecebido === "profissional" || tipoRecebido === "prestador") {
+        tipoBanco = "PRESTADOR";
+    } else {
+        return res.status(400).json({
+            sucesso: false,
+            erro: "Tipo de usuário inválido."
+        });
+    }
 
     db.query(
-        `SELECT id_prestador FROM prestadores WHERE id_usuario = ?`,
-        [id_usuario],
-        (erroBusca, resultadoBusca) => {
-            if (erroBusca) {
-                console.error("ERRO AO VERIFICAR PRESTADOR:", erroBusca);
+        `INSERT INTO usuarios
+        (
+            nome,
+            email,
+            senha,
+            telefone,
+            tipo_usuario
+        )
+        VALUES (?, ?, ?, ?, ?)`,
+
+        [
+            nome,
+            email,
+            senha,
+            telefone,
+            tipoBanco
+        ],
+
+        (erro, resultado) => {
+
+            if (erro) {
+                console.error("ERRO SQL CADASTRO:", erro);
+
                 return res.status(500).json({
                     sucesso: false,
-                    erro: erroBusca.message
+                    erro: erro.message
                 });
             }
 
-            if (resultadoBusca.length > 0) {
-                return res.json({
-                    sucesso: true,
-                    id_prestador: resultadoBusca[0].id_prestador,
-                    ja_existia: true
-                });
-            }
+            const idUsuario = resultado.insertId;
 
-            db.query(
-                `INSERT INTO prestadores
-                (id_usuario, cpf_cnpj, profissao, cidade, estado, valor_diaria, descricao)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    id_usuario,
-                    cpf_cnpj,
-                    profissao,
-                    cidade,
-                    estado,
-                    valor_diaria,
-                    descricao
-                ],
-                (erro, resultado) => {
-                    if (erro) {
-                        console.error("ERRO PRESTADOR:", erro);
-                        return res.status(500).json({
-                            sucesso: false,
-                            erro: erro.message
-                        });
-                    }
+            res.json({
+                sucesso: true,
+                id: idUsuario
+            });
 
-                    const idPrestador = resultado.insertId;
-                    const fotos = req.files || [];
-
-                    if (fotos.length === 0) {
-                        return res.json({
-                            sucesso: true,
-                            id_prestador: idPrestador,
-                            ja_existia: false,
-                            quantidade_fotos: 0
-                        });
-                    }
-
-                    let fotosSalvas = 0;
-                    let houveErro = false;
-
-                    fotos.forEach((foto) => {
-                        const caminhoFoto =
-                            `/uploads/prestadores/${foto.filename}`;
-
-                        db.query(
-                            `INSERT INTO fotos_prestadores
-                            (id_prestador, url_foto)
-                            VALUES (?, ?)`,
-                            [idPrestador, caminhoFoto],
-                            (erroFoto) => {
-                                if (erroFoto) {
-                                    console.error("ERRO AO SALVAR FOTO:", erroFoto);
-
-                                    if (!houveErro) {
-                                        houveErro = true;
-                                        return res.status(500).json({
-                                            sucesso: false,
-                                            erro: erroFoto.message,
-                                            mensagem: "Prestador cadastrado, mas houve erro ao salvar as fotos."
-                                        });
-                                    }
-
-                                    return;
-                                }
-
-                                fotosSalvas++;
-
-                                if (
-                                    fotosSalvas === fotos.length &&
-                                    !houveErro
-                                ) {
-                                    return res.json({
-                                        sucesso: true,
-                                        id_prestador: idPrestador,
-                                        ja_existia: false,
-                                        quantidade_fotos: fotosSalvas
-                                    });
-                                }
-                            }
-                        );
-                    });
-                }
-            );
         }
     );
+
 });
 
 
