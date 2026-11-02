@@ -133,7 +133,7 @@ async function cadastrarUsuario() {
     try {
 
         const resposta = await fetch(
-            "http://localhost:3000/cadastro",
+            "https://contrumax-ofc.onrender.com/cadastro",
             {
                 method: "POST",
                 headers: {
@@ -207,7 +207,7 @@ async function cadastrarUsuario() {
                 }
 
                 const respostaProfissional = await fetch(
-                    "http://localhost:3000/cadastro-prestador",
+                    "https://contrumax-ofc.onrender.com/cadastro-prestador",
                     {
                         method: "POST",
                         body: dadosProfissional
@@ -249,7 +249,7 @@ async function loginUsuario() {
     try {
 
         const resposta = await fetch(
-            "http://localhost:3000/login",
+            "https://contrumax-ofc.onrender.com/login",
             {
                 method: "POST",
                 headers: {
@@ -508,7 +508,7 @@ async function carregarMeusAnuncios() {
     try {
 
         const resposta = await fetch(
-            `http://localhost:3000/meus-anuncios/${encodeURIComponent(usuario.id_usuario)}`
+            `https://contrumax-ofc.onrender.com/meus-anuncios/${encodeURIComponent(usuario.id_usuario)}`
         );
 
         const resultado = await resposta.json();
@@ -555,7 +555,7 @@ async function carregarMeusAnuncios() {
                     <div class="fotos-anuncio-painel">
                         ${(prestador.fotos || []).map(foto => `
                             <img
-                                src="http://localhost:3000${escaparTextoPainel(foto)}"
+                                src="https://contrumax-ofc.onrender.com${escaparTextoPainel(foto)}"
                                 alt="Foto do trabalho profissional"
                             >
                         `).join("")}
@@ -617,7 +617,7 @@ async function carregarMeusAnuncios() {
 
                             ${(equipamento.fotos || []).map(foto => `
                                 <img
-                                    src="http://localhost:3000${escaparTextoPainel(foto)}"
+                                    src="https://contrumax-ofc.onrender.com${escaparTextoPainel(foto)}"
                                     alt="Foto do equipamento"
                                 >
                             `).join("")}
@@ -653,7 +653,7 @@ verificarLogin();
 
 let todosPrestadores = [];
 
-fetch("http://localhost:3000/prestadores")
+fetch("https://contrumax-ofc.onrender.com/prestadores")
 .then(res => res.json())
 .then(prestadores => {
 
@@ -684,7 +684,7 @@ function renderizarPrestadores(prestadores) {
 
         const fotos = prestador.fotos || [];
         console.log("ELEMENTO DA LISTA:", document.getElementById("lista-profissionais"));
-        console.log("URL DA FOTO:", `http://localhost:3000${fotos[0]}`);
+        console.log("URL DA FOTO:", `https://contrumax-ofc.onrender.com${fotos[0]}`);
         console.log("FOTOS DO PRESTADOR:", prestador.nome, fotos);
         const idGaleria = `carrossel-prestador-${prestador.id_prestador}`;
 
@@ -699,7 +699,7 @@ function renderizarPrestadores(prestadores) {
 
                     <img
                         class="prof-photo"
-                        src="http://localhost:3000${fotos[0]}"
+                        src="https://contrumax-ofc.onrender.com${fotos[0]}"
                         alt="Trabalho de ${prestador.nome}"
                         data-indice="0"
                     >
@@ -833,7 +833,7 @@ function mudarFotoPrestador(idPrestador, direcao) {
 
     const imagem = galeria.querySelector(".prof-photo");
 
-    imagem.src = `http://localhost:3000${prestador.fotos[indice]}`;
+    imagem.src = `https://contrumax-ofc.onrender.com${prestador.fotos[indice]}`;
     imagem.dataset.indice = indice;
 
     const contador = document.getElementById(
@@ -846,7 +846,7 @@ function mudarFotoPrestador(idPrestador, direcao) {
 }
 
 
-fetch("http://localhost:3000/prestadores")
+fetch("https://contrumax-ofc.onrender.com/prestadores")
     .then(res => res.json())
     .then(prestadores => {
         todosPrestadores = prestadores;
@@ -889,7 +889,7 @@ document.getElementById("camposProfissional").style.display = "none";
 
 let todosEquipamentos = [];
 
-fetch("http://localhost:3000/equipamentos")
+fetch("https://contrumax-ofc.onrender.com/equipamentos")
 .then(res => res.json())
 .then(equipamentos => {
 
@@ -918,7 +918,7 @@ function renderizarEquipamentos(equipamentos) {
         const idCarrossel = `carrossel-${equipamento.id_equipamento}`;
 
         const imagemInicial = fotos.length > 0
-            ? `http://localhost:3000${fotos[0]}`
+            ? `https://contrumax-ofc.onrender.com${fotos[0]}`
             : "";
 
         lista.innerHTML += `
@@ -1024,7 +1024,7 @@ function mudarFoto(idEquipamento, direcao) {
     galeria.dataset.indice = indiceAtual;
 
     imagem.src =
-        `http://localhost:3000${equipamento.fotos[indiceAtual]}`;
+        `https://contrumax-ofc.onrender.com${equipamento.fotos[indiceAtual]}`;
 
     contador.textContent =
         `${indiceAtual + 1}/${equipamento.fotos.length}`;
@@ -1130,7 +1130,7 @@ async function cadastrarEquipamento() {
     try {
 
         const resposta = await fetch(
-            "http://localhost:3000/cadastro-equipamento",
+            "https://contrumax-ofc.onrender.com/cadastro-equipamento",
             {
                 method: "POST",
                 body: dados
@@ -1316,7 +1316,7 @@ function atualizarFotoAmpliada() {
     if (fotos.length === 0) return;
 
     imagemAmpliada.src =
-        `http://localhost:3000${fotos[indiceFotoAmpliada]}`;
+        `https://contrumax-ofc.onrender.com${fotos[indiceFotoAmpliada]}`;
 
     contadorModalFoto.textContent =
         `${indiceFotoAmpliada + 1}/${fotos.length}`;
