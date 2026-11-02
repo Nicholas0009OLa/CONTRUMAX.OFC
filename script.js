@@ -316,18 +316,337 @@ function verificarLogin() {
 }
 
 function mostrarMenuUsuario() {
+    const dropdown = document.getElementById("dropdownUsuario");
+    dropdown.classList.toggle("ativo");
+}
 
-    const sair = confirm(
-        "Deseja sair da sua conta?"
-    );
+function sairDaConta() {
+    localStorage.removeItem("usuario");
+    location.reload();
+}
 
-    if (sair) {
 
-        localStorage.removeItem("usuario");
+// =========================
+// PAINEL DO USUÁRIO
+// =========================
 
-        location.reload();
+// Recupera os dados do usuário logado
+function obterUsuarioPainel() {
+    try {
+        return JSON.parse(localStorage.getItem("usuario")) || null;
+    } catch (erro) {
+        return null;
+    }
+}
+
+// Protege os dados exibidos na tela
+function escaparTextoPainel(valor) {
+    return String(valor ?? "Não informado").replace(/[&<>"']/g, caractere => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+    })[caractere]);
+}
+
+// Abre o painel na seção escolhida
+function abrirPainelUsuario(secao) {
+    const usuario = obterUsuarioPainel();
+
+    if (!usuario) {
+        alert("Entre na sua conta para acessar esta área.");
+        return;
+    }
+
+    document.getElementById("painelUsuarioOverlay").classList.add("ativo");
+
+    const dropdown = document.getElementById("dropdownUsuario");
+
+    if (dropdown) {
+        dropdown.classList.remove("ativo");
+    }
+
+    mostrarSecaoPainel(secao);
+}
+
+// Navegação entre as seções do painel
+function mostrarSecaoPainel(secao) {
+    const usuario = obterUsuarioPainel();
+    const conteudo = document.getElementById("conteudoPainelUsuario");
+
+    if (!usuario || !conteudo) return;
+
+    // Atualiza o botão selecionado no menu lateral
+    document.querySelectorAll(".painel-nav-btn").forEach(botao => {
+        const selecionado =
+            botao.getAttribute("onclick") === `mostrarSecaoPainel('${secao}')`;
+
+        botao.classList.toggle("ativo", selecionado);
+    });
+
+    // MINHA CONTA
+    if (secao === "conta") {
+        conteudo.innerHTML = `
+            <h2 class="titulo-secao-painel">Minha conta</h2>
+
+            <p class="descricao-secao-painel">
+                Confira as informações da sua conta na CONSTRUMAX.
+            </p>
+
+            <div class="dados-conta-painel">
+
+                <div class="campo-conta-painel">
+                    <span>Nome completo</span>
+                    <strong>${escaparTextoPainel(usuario.nome)}</strong>
+                </div>
+
+                <div class="campo-conta-painel">
+                    <span>E-mail</span>
+                    <strong>${escaparTextoPainel(usuario.email)}</strong>
+                </div>
+
+                <div class="campo-conta-painel">
+                    <span>Telefone</span>
+                    <strong>${escaparTextoPainel(usuario.telefone)}</strong>
+                </div>
+
+                <div class="campo-conta-painel">
+                    <span>Tipo de conta</span>
+                    <strong>${escaparTextoPainel(usuario.tipo_usuario || usuario.tipo)}</strong>
+                </div>
+
+            </div>
+        `;
+    }
+
+    // MEUS ANÚNCIOS
+    else if (secao === "anuncios") {
+        conteudo.innerHTML = `
+            <h2 class="titulo-secao-painel">Meus anúncios</h2>
+
+            <p class="descricao-secao-painel">
+                Gerencie os equipamentos e serviços que você cadastrou.
+            </p>
+
+            <p>Carregando seus anúncios...</p>
+        `;
+
+        carregarMeusAnuncios();
+    
+    }
+
+
+    // MEUS PEDIDOS
+    else if (secao === "pedidos") {
+        conteudo.innerHTML = `
+            <h2 class="titulo-secao-painel">Meus pedidos</h2>
+
+            <p class="descricao-secao-painel">
+                Acompanhe os pedidos realizados na CONSTRUMAX.
+            </p>
+
+            <div class="mensagem-painel-vazio">
+                <div>📦</div>
+
+                <h3>Seus pedidos aparecerão aqui</h3>
+
+                <p>
+                    Estamos preparando a integração com o banco de dados
+                    para exibir seus pedidos e acompanhar seus status.
+                </p>
+            </div>
+        `;
+    }
+}
+
+// Atalhos do menu superior
+function abrirMinhaConta() {
+    abrirPainelUsuario("conta");
+}
+
+function abrirMeusAnuncios() {
+    abrirPainelUsuario("anuncios");
+}
+
+function abrirMeusPedidos() {
+    abrirPainelUsuario("pedidos");
+}
+
+// Fecha o painel
+function fecharPainelUsuario() {
+    document.getElementById("painelUsuarioOverlay").classList.remove("ativo");
+}
+
+// Fecha ao clicar fora do painel
+function fecharPainelUsuarioFora(event) {
+    if (event.target.id === "painelUsuarioOverlay") {
+        fecharPainelUsuario();
+    }
+}
+
+// Fecha ao pressionar ESC
+document.addEventListener("keydown", function(event) {
+    if (event.key === "Escape") {
+        fecharPainelUsuario();
+    }
+});
+
+
+
+// =========================
+// CARREGAR MEUS ANÚNCIOS
+// =========================
+
+async function carregarMeusAnuncios() {
+
+    const usuario = obterUsuarioPainel();
+    const conteudo = document.getElementById("conteudoPainelUsuario");
+
+    if (!usuario || !conteudo) return;
+
+    try {
+
+        const resposta = await fetch(
+            `http://localhost:3000/meus-anuncios/${encodeURIComponent(usuario.id_usuario)}`
+        );
+
+        const resultado = await resposta.json();
+
+        if (!resposta.ok || !resultado.sucesso) {
+            throw new Error(resultado.mensagem || "Erro ao buscar anúncios.");
+        }
+
+        const prestador = resultado.prestador;
+        const equipamentos = resultado.equipamentos || [];
+
+        let html = `
+            <h2 class="titulo-secao-painel">Meus anúncios</h2>
+
+            <p class="descricao-secao-painel">
+                Aqui estão os serviços e equipamentos vinculados à sua conta.
+            </p>
+        `;
+
+        // PERFIL PROFISSIONAL
+
+        if (prestador) {
+
+            html += `
+                <h3 class="subtitulo-anuncios-painel">
+                    Meu perfil profissional
+                </h3>
+
+                <div class="anuncio-painel-card">
+
+                    <h3>${escaparTextoPainel(prestador.profissao)}</h3>
+
+                    <p>${escaparTextoPainel(prestador.descricao)}</p>
+
+                    <p>
+                        📍 ${escaparTextoPainel(prestador.cidade)},
+                        ${escaparTextoPainel(prestador.estado)}
+                    </p>
+
+                    <p>
+                        💰 R$ ${escaparTextoPainel(prestador.valor_diaria)} por diária
+                    </p>
+
+                    <div class="fotos-anuncio-painel">
+                        ${(prestador.fotos || []).map(foto => `
+                            <img
+                                src="http://localhost:3000${escaparTextoPainel(foto)}"
+                                alt="Foto do trabalho profissional"
+                            >
+                        `).join("")}
+                    </div>
+
+                </div>
+            `;
+        }
+
+        // EQUIPAMENTOS
+
+        html += `
+            <h3 class="subtitulo-anuncios-painel">
+                Meus equipamentos (${equipamentos.length})
+            </h3>
+        `;
+
+        if (equipamentos.length === 0) {
+
+            html += `
+                <div class="mensagem-painel-vazio">
+                    <div>🚧</div>
+                    <h3>Nenhum equipamento cadastrado</h3>
+                    <p>Quando você cadastrar equipamentos, eles aparecerão aqui.</p>
+                </div>
+            `;
+
+        } else {
+
+            equipamentos.forEach(equipamento => {
+
+                html += `
+                    <div class="anuncio-painel-card">
+
+                        <h3>${escaparTextoPainel(equipamento.nome_equipamento)}</h3>
+
+                        <p>
+                            Tipo: ${escaparTextoPainel(equipamento.tipo_equipamento)}
+                        </p>
+
+                        <p>
+                            ${escaparTextoPainel(equipamento.descricao)}
+                        </p>
+
+                        <p>
+                            💰 R$ ${escaparTextoPainel(equipamento.valor_diaria)} / diária
+                        </p>
+
+                        <p>
+                            Quantidade: ${escaparTextoPainel(equipamento.quantidade)}
+                        </p>
+
+                        <p>
+                            Disponibilidade:
+                            ${Number(equipamento.disponivel) === 1 ? "Disponível" : "Indisponível"}
+                        </p>
+
+                        <div class="fotos-anuncio-painel">
+
+                            ${(equipamento.fotos || []).map(foto => `
+                                <img
+                                    src="http://localhost:3000${escaparTextoPainel(foto)}"
+                                    alt="Foto do equipamento"
+                                >
+                            `).join("")}
+
+                        </div>
+
+                    </div>
+                `;
+            });
+
+        }
+
+        conteudo.innerHTML = html;
+
+    } catch (erro) {
+
+        console.error("ERRO AO CARREGAR ANÚNCIOS:", erro);
+
+        conteudo.innerHTML = `
+            <h2 class="titulo-secao-painel">Meus anúncios</h2>
+
+            <div class="mensagem-painel-vazio">
+                <h3>Não foi possível carregar seus anúncios.</h3>
+                <p>Verifique sua conexão com o servidor e tente novamente.</p>
+            </div>
+        `;
 
     }
+
 }
 
 verificarLogin();

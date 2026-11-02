@@ -352,7 +352,12 @@ app.post('/login', (req, res) => {
 
     db.query(
 
-        `SELECT *
+        `SELECT 
+            id_usuario,
+            nome,
+            email,
+            telefone,
+            tipo_usuario
          FROM usuarios
          WHERE email = ?
          AND senha = ?`,
@@ -757,6 +762,129 @@ app.post(
 // ===============================
 // INICIAR SERVIDOR
 // ===============================
+
+// ===============================
+// MEUS ANÚNCIOS
+// ===============================
+console.log("ROTA MEUS-ANUNCIOS REGISTRADA!");
+
+app.get('/meus-anuncios/:id_usuario', (req, res) => {
+
+    const idUsuario = Number(req.params.id_usuario);
+
+    if (!Number.isInteger(idUsuario) || idUsuario <= 0) {
+        return res.status(400).json({
+            sucesso: false,
+            mensagem: "ID de usuário inválido."
+        });
+    }
+
+    // Buscar o perfil profissional
+    db.query(
+        `
+        SELECT
+            p.id_prestador,
+            p.profissao,
+            p.cidade,
+            p.estado,
+            p.valor_diaria,
+            p.descricao,
+
+            (
+                SELECT GROUP_CONCAT(
+                    f.url_foto
+                    ORDER BY f.id_foto
+                    SEPARATOR '|||'
+                )
+                FROM fotos_prestadores f
+                WHERE f.id_prestador = p.id_prestador
+            ) AS fotos
+
+        FROM prestadores p
+        WHERE p.id_usuario = ?
+        `,
+        [idUsuario],
+
+        (erro, resultadoPrestador) => {
+
+            if (erro) {
+                console.error("ERRO AO BUSCAR PERFIL:", erro);
+
+                return res.status(500).json({
+                    sucesso: false,
+                    mensagem: "Erro ao buscar perfil profissional."
+                });
+            }
+
+            const prestador = resultadoPrestador[0] || null;
+
+            // Se não for profissional, não terá equipamentos
+            if (!prestador) {
+                return res.json({
+                    sucesso: true,
+                    prestador: null,
+                    equipamentos: []
+                });
+            }
+
+            prestador.fotos = prestador.fotos
+                ? prestador.fotos.split('|||')
+                : [];
+
+            // Buscar equipamentos cadastrados pelo profissional
+            db.query(
+                `
+                SELECT
+                    e.*,
+
+                    (
+                        SELECT GROUP_CONCAT(
+                            DISTINCT f.url_foto
+                            ORDER BY f.id_foto
+                            SEPARATOR '|||'
+                        )
+                        FROM fotos_equipamentos f
+                        WHERE f.id_equipamento = e.id_equipamento
+                    ) AS fotos
+
+                FROM equipamentos e
+                WHERE e.id_prestador = ?
+                ORDER BY e.id_equipamento DESC
+                `,
+                [prestador.id_prestador],
+
+                (erroEquipamentos, resultadoEquipamentos) => {
+
+                    if (erroEquipamentos) {
+                        console.error(
+                            "ERRO AO BUSCAR EQUIPAMENTOS:",
+                            erroEquipamentos
+                        );
+
+                        return res.status(500).json({
+                            sucesso: false,
+                            mensagem: "Erro ao buscar equipamentos."
+                        });
+                    }
+
+                    const equipamentos = resultadoEquipamentos.map(e => ({
+                        ...e,
+                        fotos: e.fotos ? e.fotos.split('|||') : []
+                    }));
+
+                    res.json({
+                        sucesso: true,
+                        prestador,
+                        equipamentos
+                    });
+
+                }
+            );
+
+        }
+    );
+
+});
 
 app.listen(3000, () => {
 

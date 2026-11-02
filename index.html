@@ -77,24 +77,37 @@
     </a>
 
 
-    <a
-      id="btnLogin"
-      class="btn-login"
-      onclick="openModal('login')">
+   <div class="menu-usuario-container" id="menuUsuarioContainer">
 
-      🔑 <span>Entrar</span>
-
-    </a>
-
-
-    <button
-      id="btnCadastro"
-      class="btn-cadastro"
-      onclick="openModal('cadastro')">
-
-      ✚ Criar Conta
-
+    <button id="btnLogin" class="btn-login" onclick="openModal('login')">
+        🔑 <span>Entrar</span>
     </button>
+
+    <button id="btnCadastro" class="btn-cadastro" onclick="openModal('cadastro')">
+        ✚ Criar Conta
+    </button>
+
+    <div id="dropdownUsuario" class="dropdown-usuario">
+
+        <a href="#" onclick="abrirMinhaConta(); return false;">
+            👤 Minha conta
+        </a>
+
+        <a href="#" onclick="abrirMeusAnuncios(); return false;">
+            📋 Meus anúncios
+        </a>
+
+        <a href="#" onclick="abrirMeusPedidos(); return false;">
+            📦 Meus pedidos
+        </a>
+
+        <div class="dropdown-divider"></div>
+
+        <a href="#" class="opcao-sair" onclick="sairDaConta(); return false;">
+            ↪ Sair da conta
+        </a>
+
+    </div>
 
   </div>
 
@@ -2397,6 +2410,77 @@
 
 </div>
 
+
+<!-- PAINEL DO USUÁRIO -->
+
+<div id="painelUsuarioOverlay"
+     class="painel-usuario-overlay"
+     onclick="fecharPainelUsuarioFora(event)">
+
+    <div class="painel-usuario-modal">
+
+        <div class="painel-usuario-header">
+
+            <div>
+                <span class="painel-usuario-label">
+                    CONSTRUMAX
+                </span>
+
+                <h2>Minha área</h2>
+            </div>
+
+            <button type="button"
+                    class="fechar-painel-usuario"
+                    onclick="fecharPainelUsuario()">
+                ×
+            </button>
+
+        </div>
+
+        <div class="painel-layout">
+
+            <!-- MENU LATERAL -->
+
+            <aside class="painel-sidebar">
+
+                <button class="painel-nav-btn ativo"
+                        onclick="mostrarSecaoPainel('conta')">
+                    👤 Minha conta
+                </button>
+
+                <button class="painel-nav-btn"
+                        onclick="mostrarSecaoPainel('anuncios')">
+                    📋 Meus anúncios
+                </button>
+
+                <button class="painel-nav-btn"
+                        onclick="mostrarSecaoPainel('pedidos')">
+                    📦 Meus pedidos
+                </button>
+
+                <div class="painel-sidebar-divider"></div>
+
+                <button class="painel-nav-btn opcao-sair"
+                        onclick="sairDaConta()">
+                    ↪ Sair da conta
+                </button>
+
+            </aside>
+
+            <!-- CONTEÚDO QUE VAI MUDAR -->
+
+            <main class="painel-conteudo">
+
+                <div id="conteudoPainelUsuario">
+                </div>
+
+            </main>
+
+        </div>
+
+    </div>
+
+</div>
 
 <!-- SCRIPT PRINCIPAL -->
 
