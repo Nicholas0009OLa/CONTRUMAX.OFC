@@ -480,14 +480,15 @@ app.get('/prestadores', (req, res) => {
 
 
 app.get('/equipamentos', (req, res) => {
+    console.log("ROTA EQUIPAMENTOS REGISTRADA!");
 
     db.query(
         `
         SELECT
             e.*,
-            u.nome,
-            p.cidade,
-            p.estado,
+            MAX(u.nome) AS nome,
+            MAX(p.cidade) AS cidade,
+            MAX(p.estado) AS estado,
             GROUP_CONCAT(
                 DISTINCT f.url_foto
                 ORDER BY f.id_foto
@@ -886,10 +887,8 @@ app.get('/meus-anuncios/:id_usuario', (req, res) => {
 
 });
 
-app.listen(3000, () => {
+const PORT = process.env.PORT || 3000;
 
-    console.log(
-        'Servidor rodando na porta 3000'
-    );
-
+app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
 });
