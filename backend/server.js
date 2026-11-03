@@ -238,6 +238,10 @@ app.post('/cadastro', (req, res) => {
 // CADASTRO DE PRESTADOR
 // ===============================
 
+// ===============================
+// CADASTRO DE PRESTADOR
+// ===============================
+
 app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) => {
 
     console.log("BODY:", req.body);
@@ -261,6 +265,7 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
         descricao
     } = req.body;
 
+    // Verifica se o usuário já possui perfil profissional
     db.query(
         `SELECT id_prestador FROM prestadores WHERE id_usuario = ?`,
         [id_usuario],
@@ -283,93 +288,112 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
                 });
             }
 
+            // Gera um novo ID automaticamente
             db.query(
-                `INSERT INTO prestadores
-                (id_usuario, cpf_cnpj, profissao, cidade, estado, valor_diaria, descricao)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                "INSERT INTO prestadores_id_seq () VALUES ()",
+                (erroId, resultadoId) => {
 
-                [
-                    id_usuario,
-                    cpf_cnpj,
-                    profissao,
-                    cidade,
-                    estado,
-                    valor_diaria,
-                    descricao
-                ],
-
-                (erro, resultado) => {
-
-                    if (erro) {
-                        console.error("ERRO PRESTADOR:", erro);
+                    if (erroId) {
+                        console.error("ERRO AO GERAR ID DO PRESTADOR:", erroId);
 
                         return res.status(500).json({
                             sucesso: false,
-                            erro: erro.message
+                            erro: erroId.message
                         });
                     }
 
-                    const idPrestador = resultado.insertId;
-                    const fotos = req.files || [];
+                    const idPrestador = resultadoId.insertId;
 
-                    if (fotos.length === 0) {
-                        return res.json({
-                            sucesso: true,
-                            id_prestador: idPrestador,
-                            ja_existia: false,
-                            quantidade_fotos: 0
-                        });
-                    }
+                    // Cadastra os dados profissionais
+                    db.query(
+                        `INSERT INTO prestadores
+                        (id_prestador, id_usuario, cpf_cnpj, profissao, cidade, estado, valor_diaria, descricao)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 
-                    let fotosSalvas = 0;
-                    let houveErro = false;
+                        [
+                            idPrestador,
+                            id_usuario,
+                            cpf_cnpj,
+                            profissao,
+                            cidade,
+                            estado,
+                            valor_diaria,
+                            descricao
+                        ],
 
-                    fotos.forEach((foto) => {
+                        (erro, resultado) => {
 
-                        const caminhoFoto =
-                            `/uploads/prestadores/${foto.filename}`;
+                            if (erro) {
+                                console.error("ERRO PRESTADOR:", erro);
 
-                        db.query(
-                            `INSERT INTO fotos_prestadores
-                            (id_prestador, url_foto)
-                            VALUES (?, ?)`,
-
-                            [idPrestador, caminhoFoto],
-
-                            (erroFoto) => {
-
-                                if (erroFoto) {
-                                    console.error("ERRO AO SALVAR FOTO:", erroFoto);
-
-                                    if (!houveErro) {
-                                        houveErro = true;
-
-                                        return res.status(500).json({
-                                            sucesso: false,
-                                            erro: erroFoto.message,
-                                            mensagem: "Prestador cadastrado, mas houve erro ao salvar as fotos."
-                                        });
-                                    }
-
-                                    return;
-                                }
-
-                                fotosSalvas++;
-
-                                if (
-                                    fotosSalvas === fotos.length &&
-                                    !houveErro
-                                ) {
-                                    return res.json({
-                                        sucesso: true,
-                                        id_prestador: idPrestador,
-                                        ja_existia: false,
-                                        quantidade_fotos: fotosSalvas
-                                    });
-                                }
+                                return res.status(500).json({
+                                    sucesso: false,
+                                    erro: erro.message
+                                });
                             }
-                        );
-                    });
+
+                            const fotos = req.files || [];
+
+                            if (fotos.length === 0) {
+                                return res.json({
+                                    sucesso: true,
+                                    id_prestador: idPrestador,
+                                    ja_existia: false,
+                                    quantidade_fotos: 0
+                                });
+                            }
+
+                            let fotosSalvas = 0;
+                            let houveErro = false;
+
+                            fotos.forEach((foto) => {
+
+                                const caminhoFoto =
+                                    `/uploads/prestadores/${foto.filename}`;
+
+                                db.query(
+                                    `INSERT INTO fotos_prestadores
+                                    (id_prestador, url_foto)
+                                    VALUES (?, ?)`,
+
+                                    [idPrestador, caminhoFoto],
+
+                                    (erroFoto) => {
+
+                                        if (erroFoto) {
+                                            console.error("ERRO AO SALVAR FOTO:", erroFoto);
+
+                                            if (!houveErro) {
+                                                houveErro = true;
+
+                                                return res.status(500).json({
+                                                    sucesso: false,
+                                                    erro: erroFoto.message,
+                                                    mensagem: "Prestador cadastrado, mas houve erro ao salvar as fotos."
+                                                });
+                                            }
+
+                                            return;
+                                        }
+
+                                        fotosSalvas++;
+
+                                        if (
+                                            fotosSalvas === fotos.length &&
+                                            !houveErro
+                                        ) {
+                                            return res.json({
+                                                sucesso: true,
+                                                id_prestador: idPrestador,
+                                                ja_existia: false,
+                                                quantidade_fotos: fotosSalvas
+                                            });
+                                        }
+                                    }
+                                );
+                            });
+                        }
+                    );
                 }
             );
         }
