@@ -269,10 +269,7 @@ app.get('/prestadores', (req, res) => {
     );
 
 });
-
-app.get("/equipamentos", (req, res) => {
-
-    db.query(
+L
 
         `SELECT
             e.*,
