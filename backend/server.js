@@ -654,6 +654,11 @@ app.get('/equipamentos', (req, res) => {
 // o id_prestador correspondente.
 // ===============================
 
+
+// ===============================
+// CADASTRO DE EQUIPAMENTO
+// ===============================
+
 app.post(
     '/cadastro-equipamento',
     upload.array('fotos', 5),
@@ -671,25 +676,16 @@ app.post(
             quantidade
         } = req.body;
 
-
-        // ===============================
         // VERIFICAR SE O PRESTADOR EXISTE
-        // ===============================
-
         db.query(
             `SELECT id_prestador
              FROM prestadores
              WHERE id_usuario = ?`,
             [id_usuario],
-
             (erro, resultado) => {
 
                 if (erro) {
-
-                    console.error(
-                        "ERRO AO BUSCAR PRESTADOR:",
-                        erro
-                    );
+                    console.error("ERRO AO BUSCAR PRESTADOR:", erro);
 
                     return res.status(500).json({
                         sucesso: false,
@@ -697,175 +693,151 @@ app.post(
                     });
                 }
 
-
                 if (resultado.length === 0) {
-
                     return res.status(404).json({
                         sucesso: false,
                         mensagem: "Profissional não encontrado."
                     });
                 }
 
+                const idPrestador = resultado[0].id_prestador;
 
-                const idPrestador =
-                    resultado[0].id_prestador;
-
-
-                // ===============================
-                // CADASTRAR EQUIPAMENTO
-                // ===============================
-
+                // GERAR ID DO EQUIPAMENTO
                 db.query(
-                    `INSERT INTO equipamentos
-                    (
-                        id_prestador,
-                        nome_equipamento,
-                        tipo_equipamento,
-                        descricao,
-                        valor_diaria,
-                        quantidade,
-                        disponivel
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    "INSERT INTO equipamentos_id_seq () VALUES ()",
+                    (erroSequencia, resultadoSequencia) => {
 
-                    [
-                        idPrestador,
-                        nome_equipamento,
-                        tipo_equipamento,
-                        descricao,
-                        valor_diaria,
-                        quantidade,
-                        1
-                    ],
-
-                    (erroEquipamento, resultadoEquipamento) => {
-
-                        if (erroEquipamento) {
-
-                            console.error(
-                                "ERRO AO CADASTRAR EQUIPAMENTO:",
-                                erroEquipamento
-                            );
+                        if (erroSequencia) {
+                            console.error("ERRO AO GERAR ID:", erroSequencia);
 
                             return res.status(500).json({
                                 sucesso: false,
-                                mensagem:
-                                    "Erro ao cadastrar equipamento.",
-                                erro: erroEquipamento
+                                mensagem: "Erro ao gerar ID do equipamento."
                             });
                         }
 
+                        const idEquipamento = resultadoSequencia.insertId;
 
-                        const idEquipamento =
-                            resultadoEquipamento.insertId;
+                        // CADASTRAR EQUIPAMENTO
+                        db.query(
+                            `INSERT INTO equipamentos
+                            (
+                                id_equipamento,
+                                id_prestador,
+                                nome_equipamento,
+                                tipo_equipamento,
+                                descricao,
+                                valor_diaria,
+                                quantidade,
+                                disponivel
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 
+                            [
+                                idEquipamento,
+                                idPrestador,
+                                nome_equipamento,
+                                tipo_equipamento,
+                                descricao,
+                                valor_diaria,
+                                quantidade,
+                                1
+                            ],
 
-                        console.log(
-                            "EQUIPAMENTO CADASTRADO:",
-                            idEquipamento
-                        );
+                            (erroEquipamento) => {
 
+                                if (erroEquipamento) {
+                                    console.error(
+                                        "ERRO AO CADASTRAR EQUIPAMENTO:",
+                                        erroEquipamento
+                                    );
 
-                        // ===============================
-                        // CADASTRAR AS FOTOS
-                        // ===============================
-
-                        const fotos = req.files || [];
-
-
-                        if (fotos.length === 0) {
-
-                            return res.json({
-                                sucesso: true,
-                                id_equipamento: idEquipamento,
-                                quantidade_fotos: 0
-                            });
-                        }
-
-
-                        let fotosProcessadas = 0;
-                        let erroFoto = false;
-
-
-                        fotos.forEach((foto) => {
-
-                            const urlFoto =
-                                `/uploads/equipamentos/${foto.filename}`;
-
-
-                            db.query(
-                                `INSERT INTO fotos_equipamentos
-                                (
-                                    id_equipamento,
-                                    url_foto
-                                )
-                                VALUES (?, ?)`,
-
-                                [
-                                    idEquipamento,
-                                    urlFoto
-                                ],
-
-                                (erroFotoBanco) => {
-
-                                    if (erroFotoBanco) {
-
-                                        console.error(
-                                            "ERRO AO SALVAR FOTO:",
-                                            erroFotoBanco
-                                        );
-
-                                        if (!erroFoto) {
-
-                                            erroFoto = true;
-
-                                            return res.status(500).json({
-                                                sucesso: false,
-                                                mensagem:
-                                                    "Equipamento cadastrado, mas houve erro ao salvar as fotos."
-                                            });
-                                        }
-
-                                        return;
-                                    }
-
-
-                                    fotosProcessadas++;
-
-
-                                    if (
-                                        fotosProcessadas ===
-                                        fotos.length &&
-                                        !erroFoto
-                                    ) {
-
-                                        console.log(
-                                            "TODAS AS FOTOS FORAM SALVAS."
-                                        );
-
-
-                                        res.json({
-                                            sucesso: true,
-                                            id_equipamento:
-                                                idEquipamento,
-                                            quantidade_fotos:
-                                                fotos.length
-                                        });
-                                    }
-
+                                    return res.status(500).json({
+                                        sucesso: false,
+                                        mensagem: "Erro ao cadastrar equipamento."
+                                    });
                                 }
-                            );
 
-                        });
+                                console.log(
+                                    "EQUIPAMENTO CADASTRADO:",
+                                    idEquipamento
+                                );
 
+                                // CADASTRAR FOTOS
+                                const fotos = req.files || [];
+
+                                if (fotos.length === 0) {
+                                    return res.json({
+                                        sucesso: true,
+                                        id_equipamento: idEquipamento,
+                                        quantidade_fotos: 0
+                                    });
+                                }
+
+                                let fotosProcessadas = 0;
+                                let erroFoto = false;
+
+                                fotos.forEach((foto) => {
+
+                                    const urlFoto =
+                                        `/uploads/equipamentos/${foto.filename}`;
+
+                                    db.query(
+                                        `INSERT INTO fotos_equipamentos
+                                        (id_equipamento, url_foto)
+                                        VALUES (?, ?)`,
+
+                                        [idEquipamento, urlFoto],
+
+                                        (erroFotoBanco) => {
+
+                                            if (erroFotoBanco) {
+                                                console.error(
+                                                    "ERRO AO SALVAR FOTO:",
+                                                    erroFotoBanco
+                                                );
+
+                                                if (!erroFoto) {
+                                                    erroFoto = true;
+
+                                                    return res.status(500).json({
+                                                        sucesso: false,
+                                                        mensagem:
+                                                            "Equipamento cadastrado, mas houve erro ao salvar as fotos."
+                                                    });
+                                                }
+
+                                                return;
+                                            }
+
+                                            fotosProcessadas++;
+
+                                            if (
+                                                fotosProcessadas === fotos.length &&
+                                                !erroFoto
+                                            ) {
+                                                console.log(
+                                                    "TODAS AS FOTOS FORAM SALVAS."
+                                                );
+
+                                                res.json({
+                                                    sucesso: true,
+                                                    id_equipamento: idEquipamento,
+                                                    quantidade_fotos: fotos.length
+                                                });
+                                            }
+                                        }
+                                    );
+                                });
+                            }
+                        );
                     }
                 );
-
             }
         );
-
     }
 );
+
 
 
 // ===============================
