@@ -655,6 +655,7 @@ app.get('/equipamentos', (req, res) => {
 // ===============================
 
 
+
 // ===============================
 // CADASTRO DE EQUIPAMENTO
 // ===============================
@@ -708,7 +709,7 @@ app.post(
                     (erroSequencia, resultadoSequencia) => {
 
                         if (erroSequencia) {
-                            console.error("ERRO AO GERAR ID:", erroSequencia);
+                            console.error("ERRO AO GERAR ID DO EQUIPAMENTO:", erroSequencia);
 
                             return res.status(500).json({
                                 sucesso: false,
@@ -747,10 +748,7 @@ app.post(
                             (erroEquipamento) => {
 
                                 if (erroEquipamento) {
-                                    console.error(
-                                        "ERRO AO CADASTRAR EQUIPAMENTO:",
-                                        erroEquipamento
-                                    );
+                                    console.error("ERRO AO CADASTRAR EQUIPAMENTO:", erroEquipamento);
 
                                     return res.status(500).json({
                                         sucesso: false,
@@ -758,10 +756,7 @@ app.post(
                                     });
                                 }
 
-                                console.log(
-                                    "EQUIPAMENTO CADASTRADO:",
-                                    idEquipamento
-                                );
+                                console.log("EQUIPAMENTO CADASTRADO:", idEquipamento);
 
                                 // CADASTRAR FOTOS
                                 const fotos = req.files || [];
@@ -782,50 +777,77 @@ app.post(
                                     const urlFoto =
                                         `/uploads/equipamentos/${foto.filename}`;
 
+                                    // GERAR ID DA FOTO
                                     db.query(
-                                        `INSERT INTO fotos_equipamentos
-                                        (id_equipamento, url_foto)
-                                        VALUES (?, ?)`,
+                                        "INSERT INTO fotos_equipamentos_id_seq () VALUES ()",
+                                        (erroSequenciaFoto, resultadoSequenciaFoto) => {
 
-                                        [idEquipamento, urlFoto],
-
-                                        (erroFotoBanco) => {
-
-                                            if (erroFotoBanco) {
-                                                console.error(
-                                                    "ERRO AO SALVAR FOTO:",
-                                                    erroFotoBanco
-                                                );
+                                            if (erroSequenciaFoto) {
+                                                console.error("ERRO AO GERAR ID DA FOTO:", erroSequenciaFoto);
 
                                                 if (!erroFoto) {
                                                     erroFoto = true;
 
                                                     return res.status(500).json({
                                                         sucesso: false,
-                                                        mensagem:
-                                                            "Equipamento cadastrado, mas houve erro ao salvar as fotos."
+                                                        mensagem: "Erro ao gerar ID da foto."
                                                     });
                                                 }
 
                                                 return;
                                             }
 
-                                            fotosProcessadas++;
+                                            const idFoto = resultadoSequenciaFoto.insertId;
 
-                                            if (
-                                                fotosProcessadas === fotos.length &&
-                                                !erroFoto
-                                            ) {
-                                                console.log(
-                                                    "TODAS AS FOTOS FORAM SALVAS."
-                                                );
+                                            // SALVAR FOTO
+                                            db.query(
+                                                `INSERT INTO fotos_equipamentos
+                                                (
+                                                    id_foto,
+                                                    id_equipamento,
+                                                    url_foto
+                                                )
+                                                VALUES (?, ?, ?)`,
 
-                                                res.json({
-                                                    sucesso: true,
-                                                    id_equipamento: idEquipamento,
-                                                    quantidade_fotos: fotos.length
-                                                });
-                                            }
+                                                [
+                                                    idFoto,
+                                                    idEquipamento,
+                                                    urlFoto
+                                                ],
+
+                                                (erroFotoBanco) => {
+
+                                                    if (erroFotoBanco) {
+                                                        console.error("ERRO AO SALVAR FOTO:", erroFotoBanco);
+
+                                                        if (!erroFoto) {
+                                                            erroFoto = true;
+
+                                                            return res.status(500).json({
+                                                                sucesso: false,
+                                                                mensagem: "Equipamento cadastrado, mas houve erro ao salvar as fotos."
+                                                            });
+                                                        }
+
+                                                        return;
+                                                    }
+
+                                                    fotosProcessadas++;
+
+                                                    if (
+                                                        fotosProcessadas === fotos.length &&
+                                                        !erroFoto
+                                                    ) {
+                                                        console.log("TODAS AS FOTOS FORAM SALVAS.");
+
+                                                        res.json({
+                                                            sucesso: true,
+                                                            id_equipamento: idEquipamento,
+                                                            quantidade_fotos: fotos.length
+                                                        });
+                                                    }
+                                                }
+                                            );
                                         }
                                     );
                                 });
@@ -837,6 +859,7 @@ app.post(
         );
     }
 );
+
 
 
 
