@@ -96,14 +96,26 @@ function selectTipo(btn){
     const time = now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0');
     const msg = document.createElement('div');
     msg.className = 'msg sent';
-    msg.innerHTML = `<div class="msg-bubble">${text}</div><div class="msg-time">${time}</div>`;
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-bubble';
+    bubble.textContent = text;
+    const timestamp = document.createElement('div');
+    timestamp.className = 'msg-time';
+    timestamp.textContent = time;
+    msg.append(bubble, timestamp);
     msgList.appendChild(msg);
     input.value = '';
     msgList.scrollTop = msgList.scrollHeight;
     setTimeout(() => {
       const reply = document.createElement('div');
       reply.className = 'msg recv';
-      reply.innerHTML = `<div class="msg-bubble">Obrigado pela mensagem! Retornaremos em breve.</div><div class="msg-time">${time}</div>`;
+      const replyBubble = document.createElement('div');
+      replyBubble.className = 'msg-bubble';
+      replyBubble.textContent = 'Obrigado pela mensagem! Retornaremos em breve.';
+      const replyTimestamp = document.createElement('div');
+      replyTimestamp.className = 'msg-time';
+      replyTimestamp.textContent = time;
+      reply.append(replyBubble, replyTimestamp);
       msgList.appendChild(reply);
       msgList.scrollTop = msgList.scrollHeight;
     }, 1200);
@@ -790,161 +802,58 @@ async function carregarMeusAnuncios() {
 verificarLogin();
 
 let todosPrestadores = [];
+let requisicaoBuscaPrestadores = 0;
 
-fetch("https://contrumax-ofc.onrender.com/prestadores")
-.then(res => res.json())
-.then(prestadores => {
-
-    todosPrestadores = prestadores;
-
-    renderizarPrestadores(prestadores);
-
-})
-.catch(erro => {
-    console.error("Erro:", erro);
-});
+function escaparHTML(valor) {
+    return String(valor ?? "").replace(/[&<>"']/g, caractere => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+    })[caractere]);
+}
 
 // PARA BUSCAR PRESTADORES
 
 function renderizarPrestadores(prestadores) {
-
     const lista = document.getElementById("lista-profissionais");
+    if (!prestadores.length) {
+        lista.innerHTML = '<div class="busca-sem-resultados"><h3>Nenhum profissional encontrado</h3><p>Tente outro serviço ou informe uma cidade diferente.</p></div>';
+        return;
+    }
 
-    lista.innerHTML = "";
-
-    prestadores.forEach(prestador => {
-
-        const iniciais = prestador.nome
-            .split(" ")
-            .map(nome => nome[0])
-            .slice(0, 2)
-            .join("");
-
+    lista.innerHTML = prestadores.map(prestador => {
+        const nome = escaparHTML(prestador.nome || "Profissional");
+        const profissao = escaparHTML(prestador.profissao || "Profissional da construção");
+        const iniciais = String(prestador.nome || "P").split(" ").map(parte => parte[0]).slice(0, 2).join("");
         const fotos = prestador.fotos || [];
-        console.log("ELEMENTO DA LISTA:", document.getElementById("lista-profissionais"));
-        console.log("URL DA FOTO:", `https://contrumax-ofc.onrender.com${fotos[0]}`);
-        console.log("FOTOS DO PRESTADOR:", prestador.nome, fotos);
-        const idGaleria = `carrossel-prestador-${prestador.id_prestador}`;
+        const id = Number(prestador.id_prestador);
+        const especialidades = prestador.especialidades || (prestador.especialidade ? [prestador.especialidade] : []);
+        const nota = Number(prestador.avaliacao);
+        const totalAvaliacoes = Number(prestador.total_avaliacoes) || 0;
+        const verificado = [1, true, "1", "true"].includes(prestador.verificado);
+        const galeriaFotos = fotos.length ? `
+            <div class="prof-gallery" id="carrossel-prestador-${id}" data-indice="0">
+                <img class="prof-photo" src="https://contrumax-ofc.onrender.com${escaparHTML(fotos[0])}" alt="Trabalho de ${nome}" data-indice="0">
+                ${fotos.length > 1 ? `
+                    <button class="prof-photo-arrow prof-photo-prev" onclick="mudarFotoPrestador(${id}, -1)" type="button" aria-label="Foto anterior">❮</button>
+                    <button class="prof-photo-arrow prof-photo-next" onclick="mudarFotoPrestador(${id}, 1)" type="button" aria-label="Próxima foto">❯</button>
+                    <span class="prof-photo-counter" id="contador-prestador-${id}">1/${fotos.length}</span>` : ""}
+            </div>` : `<div class="prof-avatar">${escaparHTML(iniciais)}</div>`;
+        const avaliacao = totalAvaliacoes > 0 && Number.isFinite(nota)
+            ? `⭐ ${nota.toFixed(1)} <span>(${totalAvaliacoes} avaliações)</span>`
+            : '<span class="sem-avaliacoes">Ainda sem avaliações</span>';
+        const tags = especialidades.length
+            ? especialidades.map(item => `<span class="prof-tag">${escaparHTML(item)}</span>`).join("")
+            : `<span class="prof-tag">${profissao}</span>`;
 
-        let galeriaFotos = "";
-
-        if (fotos.length > 0) {
-
-            galeriaFotos = `
-                <div class="prof-gallery"
-                     id="${idGaleria}"
-                     data-indice="0">
-
-                    <img
-                        class="prof-photo"
-                        src="https://contrumax-ofc.onrender.com${fotos[0]}"
-                        alt="Trabalho de ${prestador.nome}"
-                        data-indice="0"
-                    >
-
-                    ${
-                        fotos.length > 1
-                            ? `
-                                <button
-                                    class="prof-photo-arrow prof-photo-prev"
-                                    onclick="mudarFotoPrestador(${prestador.id_prestador}, -1)"
-                                    type="button"
-                                    aria-label="Foto anterior"
-                                >❮</button>
-
-                                <button
-                                    class="prof-photo-arrow prof-photo-next"
-                                    onclick="mudarFotoPrestador(${prestador.id_prestador}, 1)"
-                                    type="button"
-                                    aria-label="Próxima foto"
-                                >❯</button>
-
-                                <span class="prof-photo-counter"
-                                      id="contador-prestador-${prestador.id_prestador}">
-                                    1/${fotos.length}
-                                </span>
-                            `
-                            : ""
-                    }
-
-                </div>
-            `;
-
-        } else {
-
-            galeriaFotos = `
-                <div class="prof-avatar">
-                    ${iniciais}
-                </div>
-            `;
-
-        }
-
-        lista.innerHTML += `
-            <div class="prof-card">
-
-                <div class="prof-verified">
-                    ✔ Verificado
-                </div>
-
-                <div class="prof-header">
-
-                    ${galeriaFotos}
-
-                    <div class="prof-meta">
-                        <div class="prof-name">
-                            ${prestador.nome}
-                        </div>
-
-                        <div class="prof-role">
-                            ${prestador.profissao}
-                        </div>
-                    </div>
-
-                </div>
-
-                <div class="prof-stars">
-                    ⭐ ${prestador.avaliacao ?? "Novo"}
-                    <span>
-                        (${prestador.total_avaliacoes ?? 0} avaliações)
-                    </span>
-                </div>
-
-                <div class="prof-tags">
-                    <span class="prof-tag">
-                        ${prestador.especialidade || prestador.profissao}
-                    </span>
-                </div>
-
-                <div class="prof-info">
-
-                    <div class="prof-location">
-                        📍 ${prestador.cidade} - ${prestador.estado}
-                    </div>
-
-                    <div class="prof-price">
-                        R$ ${prestador.valor_diaria}
-                        <small>/ dia</small>
-                    </div>
-
-                </div>
-
-                <button class="btn-prof-contact">
-                    Contratar
-                </button>
-
-            </div>
-        `;
-   
-    });
-
-    console.log(
-        "GALERIAS AO FINAL DA FUNÇÃO:",
-        lista.querySelectorAll(".prof-gallery").length
-    );
+        return `<article class="prof-card">
+            <div class="prof-verified ${verificado ? "" : "prof-cadastrado"}">${verificado ? "✓ Verificado" : "Perfil cadastrado"}</div>
+            <div class="prof-header">${galeriaFotos}<div class="prof-meta"><div class="prof-name">${nome}</div><div class="prof-role">${profissao}</div></div></div>
+            <div class="prof-stars">${avaliacao}</div>
+            <div class="prof-tags">${tags}</div>
+            <div class="prof-info"><div class="prof-location">📍 ${escaparHTML(prestador.cidade)} - ${escaparHTML(prestador.estado)}</div><div class="prof-price">R$ ${escaparHTML(prestador.valor_diaria)}<small>/ dia</small></div></div>
+            <button class="btn-prof-contact" type="button" onclick="abrirPerfilPrestador(${id})">Ver perfil</button>
+        </article>`;
+    }).join("");
 }
-
-
 function mudarFotoPrestador(idPrestador, direcao) {
 
     const prestador = todosPrestadores.find(
@@ -983,43 +892,137 @@ function mudarFotoPrestador(idPrestador, direcao) {
     }
 }
 
+function normalizarTermoBusca(valor) {
+    return String(valor || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLocaleLowerCase("pt-BR")
+        .trim();
+}
 
-fetch("https://contrumax-ofc.onrender.com/prestadores")
-    .then(res => res.json())
-    .then(prestadores => {
-        todosPrestadores = prestadores;
-        renderizarPrestadores(prestadores);
-    })
-    .catch(erro => {
-        console.error("Erro ao carregar prestadores:", erro);
-    });
 
-document.addEventListener("input", (e) => {
+async function buscarPrestadores(event) {
+    if (event) event.preventDefault();
+    const servico = document.getElementById("buscaProfissional").value.trim();
+    const cidade = document.getElementById("buscaCidadeProfissional").value.trim();
+    const lista = document.getElementById("lista-profissionais");
+    const botao = document.querySelector('#formBuscaProfissionais button[type="submit"]');
+    const parametros = new URLSearchParams();
+    const numeroRequisicao = ++requisicaoBuscaPrestadores;
+    if (servico) parametros.set("servico", servico);
+    if (cidade) parametros.set("cidade", cidade);
+    lista.innerHTML = '<div class="busca-sem-resultados"><p>Buscando profissionais...</p></div>';
+    if (botao) botao.disabled = true;
 
-    if (e.target.id === "buscaProfissional") {
-
-        const busca = e.target.value.toLowerCase();
-
-        const filtrados = todosPrestadores.filter(prestador => {
-
-            const nome = (prestador.nome || "").toLowerCase();
-            const profissao = (prestador.profissao || "").toLowerCase();
-            const cidade = (prestador.cidade || "").toLowerCase();
-
-            return (
-                nome.includes(busca) ||
-                profissao.includes(busca) ||
-                cidade.includes(busca)
-            );
-
+    try {
+        const resposta = await fetch(`https://contrumax-ofc.onrender.com/prestadores?${parametros.toString()}`);
+        if (!resposta.ok) throw new Error("Falha ao consultar profissionais.");
+        const resultados = await resposta.json();
+        if (numeroRequisicao !== requisicaoBuscaPrestadores) return;
+        const servicoNormalizado = normalizarTermoBusca(servico);
+        const partesLocalizacao = cidade.split(",").map(parte => normalizarTermoBusca(parte)).filter(Boolean);
+        todosPrestadores = resultados.filter(prestador => {
+            const termosServico = [prestador.profissao, prestador.especialidade, ...(prestador.especialidades || [])]
+                .map(normalizarTermoBusca);
+            const servicoCombina = !servicoNormalizado || termosServico.some(termo => termo.includes(servicoNormalizado));
+            const cidadeNormalizada = normalizarTermoBusca(prestador.cidade);
+            const estadoNormalizado = normalizarTermoBusca(prestador.estado);
+            const cidadeCombina = !partesLocalizacao.length || (partesLocalizacao.length > 1
+                ? cidadeNormalizada.includes(partesLocalizacao[0]) && estadoNormalizado.includes(partesLocalizacao.slice(1).join(" "))
+                : cidadeNormalizada.includes(partesLocalizacao[0]) || estadoNormalizado.includes(partesLocalizacao[0]));
+            return servicoCombina && cidadeCombina;
         });
-
-        renderizarPrestadores(filtrados);
-
+        renderizarPrestadores(todosPrestadores);
+    } catch (erro) {
+        if (numeroRequisicao !== requisicaoBuscaPrestadores) return;
+        console.error("Erro ao buscar profissionais:", erro);
+        lista.innerHTML = '<div class="busca-sem-resultados"><h3>Não foi possível carregar os profissionais</h3><p>Tente novamente em instantes.</p></div>';
+    } finally {
+        if (botao && numeroRequisicao === requisicaoBuscaPrestadores) botao.disabled = false;
     }
+}
 
+function limparBuscaPrestadores() {
+    document.getElementById("buscaProfissional").value = "";
+    document.getElementById("buscaCidadeProfissional").value = "";
+    buscarPrestadores();
+}
+
+function abrirPerfilPrestador(id) {
+    const prestador = todosPrestadores.find(item => Number(item.id_prestador) === Number(id));
+    if (!prestador) return;
+    const modal = document.getElementById("modalPerfilPrestador");
+    const fotos = prestador.fotos || [];
+    const nome = escaparHTML(prestador.nome || "Profissional");
+    const profissao = escaparHTML(prestador.profissao || "Profissional da construção");
+    const especialidades = prestador.especialidades || (prestador.especialidade ? [prestador.especialidade] : []);
+    const nota = Number(prestador.avaliacao);
+    const totalAvaliacoes = Number(prestador.total_avaliacoes) || 0;
+    const temAvaliacao = totalAvaliacoes > 0 && Number.isFinite(nota);
+    const verificado = [1, true, "1", "true"].includes(prestador.verificado);
+    const contato = '<button class="perfil-botao-contato" type="button" disabled aria-disabled="true">💬 Chat em breve</button>';
+    const avatar = fotos.length
+        ? `<img class="perfil-foto-principal" id="perfilFotoPrincipal" src="https://contrumax-ofc.onrender.com${escaparHTML(fotos[0])}" alt="Trabalho de ${nome}">`
+        : `<div class="perfil-avatar-grande">${escaparHTML(String(prestador.nome || "P").split(" ").map(parte => parte[0]).slice(0, 2).join(""))}</div>`;
+    const galeria = fotos.length ? `<section class="perfil-galeria-secao"><h3>📷 Meus trabalhos</h3><div class="perfil-galeria">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoPerfilPrestador(${Number(id)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="https://contrumax-ofc.onrender.com${escaparHTML(foto)}" alt="Trabalho ${indice + 1} de ${nome}"></button>`).join("")}</div></section>` : "";
+    const notaHtml = temAvaliacao
+        ? `<strong>⭐ ${nota.toFixed(1)}</strong> de 5 (${totalAvaliacoes} avaliações)`
+        : '<span>Este profissional ainda não recebeu avaliações.</span>';
+    const tags = especialidades.length
+        ? especialidades.map(item => `<span>${escaparHTML(item)}</span>`).join("")
+        : `<span>${profissao}</span>`;
+    const preco = Number(prestador.valor_diaria);
+    const diaria = Number.isFinite(preco)
+        ? preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+        : escaparHTML(prestador.valor_diaria || "Consulte o profissional");
+
+    modal.innerHTML = `<div class="perfil-fundo" onclick="fecharPerfilPrestador(event)">
+        <article class="perfil-modal-conteudo" role="dialog" aria-modal="true" aria-labelledby="perfilNome">
+            <button type="button" class="perfil-fechar" onclick="fecharPerfilPrestador()" aria-label="Fechar perfil">×</button>
+            <div class="perfil-topo">
+                ${avatar}
+                <div class="perfil-identificacao">
+                    <span class="perfil-selo ${verificado ? "perfil-verificado" : ""}">${verificado ? "✓ Profissional verificado" : "Perfil profissional"}</span>
+                    <h2 id="perfilNome">${nome}</h2>
+                    <h3>🦺 ${profissao}</h3>
+                    <p>📍 ${escaparHTML(prestador.cidade)}${prestador.estado ? `, ${escaparHTML(prestador.estado)}` : ""}</p>
+                    <p class="perfil-nota">${notaHtml}</p>
+                </div>
+                <div class="perfil-preco"><strong>${diaria}</strong><span>por diária</span></div>
+            </div>
+            ${galeria}
+            <div class="perfil-detalhes">
+                <section class="perfil-sobre"><h3>📝 Sobre mim</h3><p>${escaparHTML(prestador.descricao || "O profissional ainda não adicionou uma descrição.")}</p><h3>⚙ Serviços oferecidos</h3><div class="perfil-tags">${tags}</div><h3>📍 Localização</h3><p>${escaparHTML(prestador.cidade)}${prestador.estado ? `, ${escaparHTML(prestador.estado)}` : ""}</p></section>
+                <aside class="perfil-contato"><h3>⭐ Avaliações</h3><p>${notaHtml}</p>${contato}</aside>
+            </div>
+        </article>
+    </div>`;
+    modal.classList.add("ativo");
+    modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("perfil-aberto");
+}
+
+function selecionarFotoPerfilPrestador(id, indice) {
+    const prestador = todosPrestadores.find(item => Number(item.id_prestador) === Number(id));
+    const imagem = document.getElementById("perfilFotoPrincipal");
+    if (prestador?.fotos?.[indice] && imagem) {
+        imagem.src = `https://contrumax-ofc.onrender.com${prestador.fotos[indice]}`;
+    }
+}
+
+function fecharPerfilPrestador(event) {
+    if (event && event.target !== event.currentTarget) return;
+    const modal = document.getElementById("modalPerfilPrestador");
+    modal.classList.remove("ativo");
+    modal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("perfil-aberto");
+}
+
+document.addEventListener("keydown", event => {
+    if (event.key === "Escape") fecharPerfilPrestador();
 });
 
+buscarPrestadores();
 //EQUIPAMENTOS
 
 

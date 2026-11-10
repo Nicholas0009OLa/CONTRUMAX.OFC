@@ -1585,19 +1585,17 @@
 
 
 
-  <div style="margin-bottom:30px;">
-
-    <input
-      type="text"
-      id="buscaProfissional"
-      placeholder="Buscar profissão ou cidade..."
-      style="
-        width:100%;
-        padding:15px;
-        font-size:16px;
-      ">
-
-  </div>
+  <form class="busca-profissionais" id="formBuscaProfissionais" onsubmit="buscarPrestadores(event)">
+    <label>
+      Serviço ou profissão
+      <input type="search" id="buscaProfissional" placeholder="Ex.: pedreiro, eletricista, pintor">
+    </label>
+    <label>
+      Cidade ou estado
+      <input type="search" id="buscaCidadeProfissional" placeholder="Ex.: Santos ou SP">
+    </label>
+    <button type="submit" class="btn-primary">Buscar profissionais</button>
+  </form>
 
 
 
@@ -1618,7 +1616,7 @@
     <a
       href="#"
       class="btn-primary"
-      onclick="openModal('cadastro');return false;">
+      onclick="limparBuscaPrestadores();return false;">
 
       Ver todos os profissionais
 
@@ -1627,6 +1625,8 @@
   </div>
 
 </section>
+
+<div id="modalPerfilPrestador" class="modal-perfil-prestador" aria-hidden="true"></div>
 
 
 

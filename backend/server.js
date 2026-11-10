@@ -546,13 +546,48 @@ app.post('/login', (req, res) => {
 
 app.get('/prestadores', (req, res) => {
 
+    const servico = String(req.query.servico || '').trim();
+    const cidade = String(req.query.cidade || '').trim();
+    const filtros = [];
+    const parametros = [];
+
+    if (servico) {
+        filtros.push(`(
+            LOWER(p.profissao) LIKE LOWER(?)
+            OR EXISTS (
+                SELECT 1
+                FROM prestador_especialidade peBusca
+                INNER JOIN especialidades eBusca ON eBusca.id_especialidade = peBusca.id_especialidade
+                WHERE peBusca.id_prestador = p.id_prestador
+                  AND LOWER(eBusca.nome) LIKE LOWER(?)
+            )
+        )`);
+        parametros.push(`%${servico}%`, `%${servico}%`);
+    }
+
+    if (cidade) {
+        const partesLocalizacao = cidade.split(',').map(parte => parte.trim()).filter(Boolean);
+        if (partesLocalizacao.length > 1) {
+            filtros.push(`(LOWER(p.cidade) LIKE LOWER(?) AND LOWER(p.estado) LIKE LOWER(?))`);
+            parametros.push(`%${partesLocalizacao[0]}%`, `%${partesLocalizacao.slice(1).join(' ')}%`);
+        } else {
+            filtros.push(`(LOWER(p.cidade) LIKE LOWER(?) OR LOWER(p.estado) LIKE LOWER(?))`);
+            parametros.push(`%${cidade}%`, `%${cidade}%`);
+        }
+    }
+
     db.query(
         `
         SELECT
             p.*,
             u.nome,
             u.telefone,
-            e.nome AS especialidade,
+            (
+                SELECT GROUP_CONCAT(DISTINCT e.nome SEPARATOR '|||')
+                FROM prestador_especialidade pe
+                INNER JOIN especialidades e ON e.id_especialidade = pe.id_especialidade
+                WHERE pe.id_prestador = p.id_prestador
+            ) AS especialidades,
 
             (
                 SELECT GROUP_CONCAT(
@@ -568,13 +603,10 @@ app.get('/prestadores', (req, res) => {
 
         INNER JOIN usuarios u
             ON p.id_usuario = u.id_usuario
-
-        LEFT JOIN prestador_especialidade pe
-            ON p.id_prestador = pe.id_prestador
-
-        LEFT JOIN especialidades e
-            ON pe.id_especialidade = e.id_especialidade
+        ${filtros.length ? `WHERE ${filtros.join(' AND ')}` : ''}
+        ORDER BY p.id_prestador DESC
         `,
+        parametros,
 
         (erro, resultado) => {
 
@@ -589,6 +621,9 @@ app.get('/prestadores', (req, res) => {
 
             const prestadores = resultado.map(prestador => ({
                 ...prestador,
+                especialidades: prestador.especialidades
+                    ? prestador.especialidades.split('|||')
+                    : [],
                 fotos: prestador.fotos
                     ? prestador.fotos.split('|||')
                     : []
