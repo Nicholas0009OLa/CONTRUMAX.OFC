@@ -152,7 +152,8 @@ async function cadastrarUsuario() {
                 JSON.stringify({
                     id_usuario: resultado.id,
                     nome: nome,
-                    email: email
+                    email: email,
+                    auth_token: resultado.token
                 })
             );
 
@@ -210,6 +211,7 @@ async function cadastrarUsuario() {
                     "https://contrumax-ofc.onrender.com/cadastro-prestador",
                     {
                         method: "POST",
+                        headers: { Authorization: `Bearer ${resultado.token}` },
                         body: dadosProfissional
                     }
                 );
@@ -270,7 +272,7 @@ async function loginUsuario() {
 
     localStorage.setItem(
         "usuario",
-        JSON.stringify(resultado.usuario)
+        JSON.stringify({ ...resultado.usuario, auth_token: resultado.token })
     );
 
     closeModal();
@@ -297,6 +299,121 @@ if(usuario){
     document.querySelector(".btn-login").innerHTML =
         `👤 ${usuario.nome}`;
 }
+function usuarioComSessao() {
+    const usuario = obterUsuarioPainel();
+    if (!usuario?.auth_token) {
+        alert("Sua sessão expirou. Entre novamente para gerenciar os anúncios.");
+        openModal("login");
+        return null;
+    }
+    return usuario;
+}
+
+function abrirEdicaoEquipamento(id) {
+    const equipamento = equipamentosDoPainel.find(item => Number(item.id_equipamento) === Number(id));
+    if (!equipamento) return;
+    document.getElementById("modalEditarEquipamento")?.remove();
+    const fotos = equipamento.fotos || [];
+    const modal = document.createElement("div");
+    modal.id = "modalEditarEquipamento";
+    modal.className = "modal-editar-equipamento";
+    modal.innerHTML = `
+        <form class="form-editar-equipamento" onsubmit="salvarEdicaoEquipamento(event, ${Number(id)})">
+            <button type="button" class="fechar-edicao-equipamento" onclick="fecharEdicaoEquipamento()" aria-label="Fechar">×</button>
+            <h2>Editar equipamento</h2>
+            <label>Nome<input name="nome_equipamento" required maxlength="150" value="${escaparTextoPainel(equipamento.nome_equipamento)}"></label>
+            <label>Tipo<input name="tipo_equipamento" required maxlength="100" value="${escaparTextoPainel(equipamento.tipo_equipamento)}"></label>
+            <label>Descrição<textarea name="descricao" rows="4">${escaparTextoPainel(equipamento.descricao || "")}</textarea></label>
+            <div class="campos-editar-linha">
+                <label>Valor da diária<input name="valor_diaria" type="number" min="0" step="0.01" required value="${escaparTextoPainel(equipamento.valor_diaria)}"></label>
+                <label>Quantidade<input name="quantidade" type="number" min="1" step="1" required value="${escaparTextoPainel(equipamento.quantidade)}"></label>
+            </div>
+            <label>Fotos atuais <span class="ajuda-editar-fotos">Desmarque as que deseja remover.</span></label>
+            <div class="fotos-editar-equipamento">
+                ${fotos.map((foto, i) => `<label class="foto-editar-item"><img src="https://contrumax-ofc.onrender.com${escaparTextoPainel(foto)}" alt="Foto atual ${i + 1}"><span><input type="checkbox" name="fotosManter" value="${escaparTextoPainel(foto)}" checked> Manter</span></label>`).join("") || "<p>Este anúncio não tem fotos.</p>"}
+            </div>
+            <label>Adicionar fotos<input name="fotos" type="file" accept="image/*" multiple></label>
+            <small>Máximo de 5 fotos no total.</small>
+            <div class="botoes-editar-equipamento"><button class="acao-anuncio-principal" type="submit">Salvar alterações</button><button class="acao-anuncio-secundaria" type="button" onclick="fecharEdicaoEquipamento()">Cancelar</button></div>
+        </form>`;
+    modal.addEventListener("click", event => { if (event.target === modal) fecharEdicaoEquipamento(); });
+    document.body.appendChild(modal);
+    modal.querySelector('input[type="file"]').addEventListener("change", event => {
+        const manter = modal.querySelectorAll('input[name="fotosManter"]:checked').length;
+        if (manter + event.target.files.length > 5) {
+            alert("O anúncio pode ter no máximo 5 fotos.");
+            event.target.value = "";
+        }
+    });
+}
+
+function fecharEdicaoEquipamento() {
+    document.getElementById("modalEditarEquipamento")?.remove();
+}
+
+async function salvarEdicaoEquipamento(event, id) {
+    event.preventDefault();
+    const usuario = usuarioComSessao();
+    if (!usuario) return;
+    const form = event.currentTarget;
+    const dados = new FormData();
+    ["nome_equipamento", "tipo_equipamento", "descricao", "valor_diaria", "quantidade"].forEach(nome => {
+        dados.append(nome, form.elements.namedItem(nome).value);
+    });
+    const fotosManter = [...form.querySelectorAll('input[name="fotosManter"]:checked')].map(campo => campo.value);
+    dados.set("fotosManter", JSON.stringify(fotosManter));
+    [...form.querySelector('input[name="fotos"]').files].forEach(foto => dados.append("fotos", foto));
+    const botao = form.querySelector('button[type="submit"]');
+    botao.disabled = true;
+    try {
+        const resposta = await fetch(`https://contrumax-ofc.onrender.com/equipamentos/${id}`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${usuario.auth_token}` },
+            body: dados
+        });
+        const resultado = await resposta.json();
+        if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || "Não foi possível atualizar o anúncio.");
+        fecharEdicaoEquipamento();
+        await carregarMeusAnuncios();
+        alert("Anúncio atualizado com sucesso.");
+    } catch (erro) {
+        alert(erro.message || "Erro ao atualizar o anúncio.");
+        botao.disabled = false;
+    }
+}
+
+async function alternarDisponibilidadeEquipamento(id) {
+    const usuario = usuarioComSessao();
+    if (!usuario) return;
+    const equipamento = equipamentosDoPainel.find(item => Number(item.id_equipamento) === Number(id));
+    if (!equipamento) return;
+    try {
+        const resposta = await fetch(`https://contrumax-ofc.onrender.com/equipamentos/${id}/disponibilidade`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${usuario.auth_token}` },
+            body: JSON.stringify({ disponivel: Number(equipamento.disponivel) === 1 ? 0 : 1 })
+        });
+        const resultado = await resposta.json();
+        if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || "Não foi possível alterar a disponibilidade.");
+        await carregarMeusAnuncios();
+    } catch (erro) { alert(erro.message || "Erro ao alterar a disponibilidade."); }
+}
+
+async function excluirEquipamento(id) {
+    if (!confirm("Tem certeza de que deseja excluir este anúncio? Esta ação não pode ser desfeita.")) return;
+    const usuario = usuarioComSessao();
+    if (!usuario) return;
+    try {
+        const resposta = await fetch(`https://contrumax-ofc.onrender.com/equipamentos/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${usuario.auth_token}` }
+        });
+        const resultado = await resposta.json();
+        if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || "Não foi possível excluir o anúncio.");
+        await carregarMeusAnuncios();
+    } catch (erro) { alert(erro.message || "Erro ao excluir o anúncio."); }
+}
+
 function verificarLogin() {
 
     const usuario = JSON.parse(
@@ -320,7 +437,18 @@ function mostrarMenuUsuario() {
     dropdown.classList.toggle("ativo");
 }
 
-function sairDaConta() {
+async function sairDaConta() {
+    const usuario = obterUsuarioPainel();
+    if (usuario?.auth_token) {
+        try {
+            await fetch("https://contrumax-ofc.onrender.com/logout", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${usuario.auth_token}` }
+            });
+        } catch (erro) {
+            console.warn("Não foi possível encerrar a sessão no servidor.", erro);
+        }
+    }
     localStorage.removeItem("usuario");
     location.reload();
 }
@@ -498,6 +626,8 @@ document.addEventListener("keydown", function(event) {
 // CARREGAR MEUS ANÚNCIOS
 // =========================
 
+let equipamentosDoPainel = [];
+
 async function carregarMeusAnuncios() {
 
     const usuario = obterUsuarioPainel();
@@ -508,7 +638,8 @@ async function carregarMeusAnuncios() {
     try {
 
         const resposta = await fetch(
-            `https://contrumax-ofc.onrender.com/meus-anuncios/${encodeURIComponent(usuario.id_usuario)}`
+            `https://contrumax-ofc.onrender.com/meus-anuncios/${encodeURIComponent(usuario.id_usuario)}`,
+            { headers: { Authorization: `Bearer ${usuario.auth_token || ""}` } }
         );
 
         const resultado = await resposta.json();
@@ -519,6 +650,7 @@ async function carregarMeusAnuncios() {
 
         const prestador = resultado.prestador;
         const equipamentos = resultado.equipamentos || [];
+        equipamentosDoPainel = equipamentos;
 
         let html = `
             <h2 class="titulo-secao-painel">Meus anúncios</h2>
@@ -612,6 +744,12 @@ async function carregarMeusAnuncios() {
                             Disponibilidade:
                             ${Number(equipamento.disponivel) === 1 ? "Disponível" : "Indisponível"}
                         </p>
+
+                        <div class="acoes-anuncio-painel">
+                            <button type="button" class="acao-anuncio-principal" onclick="abrirEdicaoEquipamento(${Number(equipamento.id_equipamento)})">Editar</button>
+                            <button type="button" class="acao-anuncio-secundaria" onclick="alternarDisponibilidadeEquipamento(${Number(equipamento.id_equipamento)})">${Number(equipamento.disponivel) === 1 ? "Marcar indisponível" : "Marcar disponível"}</button>
+                            <button type="button" class="acao-anuncio-excluir" onclick="excluirEquipamento(${Number(equipamento.id_equipamento)})">Excluir</button>
+                        </div>
 
                         <div class="fotos-anuncio-painel">
 
@@ -1133,6 +1271,7 @@ async function cadastrarEquipamento() {
             "https://contrumax-ofc.onrender.com/cadastro-equipamento",
             {
                 method: "POST",
+                headers: { Authorization: `Bearer ${usuario.auth_token || ""}` },
                 body: dados
             }
         );

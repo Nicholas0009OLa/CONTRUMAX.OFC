@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const db = require('./db');
 
 const multer = require('multer');
@@ -9,6 +10,23 @@ const fs = require('fs');
 console.log("SERVER DA CONSTRUMAX CARREGADO");
 
 const app = express();
+const sessoes = new Map();
+
+function criarSessao(idUsuario) {
+    const token = crypto.randomBytes(32).toString('hex');
+    sessoes.set(token, Number(idUsuario));
+    return token;
+}
+
+function autenticar(req, res, next) {
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const idUsuario = sessoes.get(token);
+    if (!idUsuario) {
+        return res.status(401).json({ sucesso: false, mensagem: 'Faça login novamente para continuar.' });
+    }
+    req.usuarioAutenticado = { id_usuario: idUsuario };
+    next();
+}
 
 const pastaUploads = path.join(__dirname, 'uploads', 'equipamentos');
 
@@ -223,7 +241,8 @@ app.post('/cadastro', (req, res) => {
 
                     return res.json({
                         sucesso: true,
-                        id: idUsuario
+                        id: idUsuario,
+                        token: criarSessao(idUsuario)
                     });
 
                 }
@@ -500,7 +519,8 @@ app.post('/login', (req, res) => {
 
                 res.json({
                     sucesso: true,
-                    usuario: resultado[0]
+                    usuario: resultado[0],
+                    token: criarSessao(resultado[0].id_usuario)
                 });
 
             } else {
@@ -662,6 +682,7 @@ app.get('/equipamentos', (req, res) => {
 
 app.post(
     '/cadastro-equipamento',
+    autenticar,
     upload.array('fotos', 5),
     (req, res) => {
 
@@ -676,6 +697,10 @@ app.post(
             valor_diaria,
             quantidade
         } = req.body;
+
+        if (Number(id_usuario) !== req.usuarioAutenticado.id_usuario) {
+            return res.status(403).json({ sucesso: false, mensagem: 'Você só pode cadastrar anúncios na sua conta.' });
+        }
 
         // VERIFICAR SE O PRESTADOR EXISTE
         db.query(
@@ -872,7 +897,7 @@ app.post(
 // ===============================
 console.log("ROTA MEUS-ANUNCIOS REGISTRADA!");
 
-app.get('/meus-anuncios/:id_usuario', (req, res) => {
+app.get('/meus-anuncios/:id_usuario', autenticar, (req, res) => {
 
     const idUsuario = Number(req.params.id_usuario);
 
@@ -881,6 +906,10 @@ app.get('/meus-anuncios/:id_usuario', (req, res) => {
             sucesso: false,
             mensagem: "ID de usuário inválido."
         });
+    }
+
+    if (idUsuario !== req.usuarioAutenticado.id_usuario) {
+        return res.status(403).json({ sucesso: false, mensagem: 'Acesso não autorizado.' });
     }
 
     // Buscar o perfil profissional
@@ -988,6 +1017,124 @@ app.get('/meus-anuncios/:id_usuario', (req, res) => {
         }
     );
 
+});
+
+function consultar(sql, valores = []) {
+    return new Promise((resolve, reject) => {
+        db.query(sql, valores, (erro, resultado) => erro ? reject(erro) : resolve(resultado));
+    });
+}
+
+function arquivoFotoEquipamento(url) {
+    const nome = path.basename(String(url || ''));
+    if (!/^\d+-\d+\.[a-z0-9]+$/i.test(nome)) return;
+    const caminho = path.join(pastaUploads, nome);
+    if (path.dirname(caminho) === pastaUploads && fs.existsSync(caminho)) fs.unlinkSync(caminho);
+}
+
+async function buscarAnuncioDoUsuario(idEquipamento, idUsuario) {
+    const resultados = await consultar(
+        `SELECT e.id_equipamento, e.id_prestador
+         FROM equipamentos e
+         INNER JOIN prestadores p ON p.id_prestador = e.id_prestador
+         WHERE e.id_equipamento = ? AND p.id_usuario = ?`,
+        [idEquipamento, idUsuario]
+    );
+    return resultados[0] || null;
+}
+
+async function salvarFotoEquipamento(idEquipamento, foto) {
+    const sequencia = await consultar('INSERT INTO fotos_equipamentos_id_seq () VALUES ()');
+    await consultar(
+        `INSERT INTO fotos_equipamentos (id_foto, id_equipamento, url_foto) VALUES (?, ?, ?)`,
+        [sequencia.insertId, idEquipamento, `/uploads/equipamentos/${foto.filename}`]
+    );
+}
+
+app.post('/logout', autenticar, (req, res) => {
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    sessoes.delete(token);
+    res.json({ sucesso: true });
+});
+
+app.put('/equipamentos/:id', autenticar, upload.array('fotos', 5), async (req, res) => {
+    const idEquipamento = Number(req.params.id);
+    const { nome_equipamento, tipo_equipamento, descricao, valor_diaria, quantidade } = req.body;
+    const valor = Number(valor_diaria);
+    const qtd = Number(quantidade);
+    if (!Number.isInteger(idEquipamento) || idEquipamento <= 0 || !nome_equipamento?.trim() ||
+        !tipo_equipamento?.trim() || !Number.isFinite(valor) || valor < 0 ||
+        !Number.isInteger(qtd) || qtd < 1) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Confira os dados do equipamento.' });
+    }
+
+    try {
+        const anuncio = await buscarAnuncioDoUsuario(idEquipamento, req.usuarioAutenticado.id_usuario);
+        if (!anuncio) return res.status(404).json({ sucesso: false, mensagem: 'Anúncio não encontrado.' });
+
+        const fotosAtuais = await consultar('SELECT id_foto, url_foto FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
+        let manter;
+        try { manter = JSON.parse(req.body.fotosManter || '[]'); } catch { manter = []; }
+        const urlsManter = new Set(Array.isArray(manter) ? manter.filter(url => fotosAtuais.some(f => f.url_foto === url)) : []);
+        const novasFotos = req.files || [];
+        if (urlsManter.size + novasFotos.length > 5) {
+            novasFotos.forEach(f => arquivoFotoEquipamento(`/uploads/equipamentos/${f.filename}`));
+            return res.status(400).json({ sucesso: false, mensagem: 'O anúncio pode ter no máximo 5 fotos.' });
+        }
+
+        await consultar(
+            `UPDATE equipamentos SET nome_equipamento = ?, tipo_equipamento = ?, descricao = ?, valor_diaria = ?, quantidade = ? WHERE id_equipamento = ?`,
+            [nome_equipamento.trim(), tipo_equipamento.trim(), descricao || '', valor, qtd, idEquipamento]
+        );
+
+        for (const foto of fotosAtuais) {
+            if (!urlsManter.has(foto.url_foto)) {
+                await consultar('DELETE FROM fotos_equipamentos WHERE id_foto = ? AND id_equipamento = ?', [foto.id_foto, idEquipamento]);
+                arquivoFotoEquipamento(foto.url_foto);
+            }
+        }
+        for (const foto of novasFotos) await salvarFotoEquipamento(idEquipamento, foto);
+        res.json({ sucesso: true, mensagem: 'Anúncio atualizado.' });
+    } catch (erro) {
+        console.error('ERRO AO EDITAR EQUIPAMENTO:', erro);
+        res.status(500).json({ sucesso: false, mensagem: 'Não foi possível atualizar o anúncio.' });
+    }
+});
+
+app.patch('/equipamentos/:id/disponibilidade', autenticar, async (req, res) => {
+    const idEquipamento = Number(req.params.id);
+    const disponivel = Number(req.body.disponivel);
+    if (!Number.isInteger(idEquipamento) || idEquipamento <= 0 || ![0, 1].includes(disponivel)) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Disponibilidade inválida.' });
+    }
+    try {
+        const anuncio = await buscarAnuncioDoUsuario(idEquipamento, req.usuarioAutenticado.id_usuario);
+        if (!anuncio) return res.status(404).json({ sucesso: false, mensagem: 'Anúncio não encontrado.' });
+        await consultar('UPDATE equipamentos SET disponivel = ? WHERE id_equipamento = ?', [disponivel, idEquipamento]);
+        res.json({ sucesso: true, disponivel });
+    } catch (erro) {
+        console.error('ERRO AO ALTERAR DISPONIBILIDADE:', erro);
+        res.status(500).json({ sucesso: false, mensagem: 'Não foi possível alterar a disponibilidade.' });
+    }
+});
+
+app.delete('/equipamentos/:id', autenticar, async (req, res) => {
+    const idEquipamento = Number(req.params.id);
+    if (!Number.isInteger(idEquipamento) || idEquipamento <= 0) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Anúncio inválido.' });
+    }
+    try {
+        const anuncio = await buscarAnuncioDoUsuario(idEquipamento, req.usuarioAutenticado.id_usuario);
+        if (!anuncio) return res.status(404).json({ sucesso: false, mensagem: 'Anúncio não encontrado.' });
+        const fotos = await consultar('SELECT url_foto FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
+        await consultar('DELETE FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
+        await consultar('DELETE FROM equipamentos WHERE id_equipamento = ? AND id_prestador = ?', [idEquipamento, anuncio.id_prestador]);
+        fotos.forEach(f => arquivoFotoEquipamento(f.url_foto));
+        res.json({ sucesso: true });
+    } catch (erro) {
+        console.error('ERRO AO EXCLUIR EQUIPAMENTO:', erro);
+        res.status(500).json({ sucesso: false, mensagem: 'Não foi possível excluir o anúncio.' });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
