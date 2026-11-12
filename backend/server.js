@@ -162,8 +162,6 @@ app.get('/usuarios', (req, res) => {
 
 app.post('/cadastro', (req, res) => {
 
-    console.log("DADOS RECEBIDOS:", req.body);
-
     const {
         nome,
         email,
@@ -263,10 +261,6 @@ app.post('/cadastro', (req, res) => {
 
 
 app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) => {
-    console.log("BODY:", req.body);
-    console.log("FILES:", req.files);
-    console.log("CONTENT TYPE:", req.headers["content-type"]);
-
     if (!req.body) {
         return res.status(400).json({
             sucesso: false,
@@ -468,8 +462,6 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
 // ===============================
 
 app.post('/login', (req, res) => {
-
-    console.log("LOGIN RECEBIDO:", req.body);
 
     const {
         email,
@@ -1169,6 +1161,226 @@ app.delete('/equipamentos/:id', autenticar, async (req, res) => {
     } catch (erro) {
         console.error('ERRO AO EXCLUIR EQUIPAMENTO:', erro);
         res.status(500).json({ sucesso: false, mensagem: 'Não foi possível excluir o anúncio.' });
+    }
+});
+
+async function buscarParticipacaoConversa(idConversa, idUsuario) {
+    const conversas = await consultar(
+        `SELECT c.id_conversa, c.id_cliente, c.id_prestador,
+                p.id_usuario AS id_usuario_prestador
+         FROM conversas c
+         INNER JOIN prestadores p ON p.id_prestador = c.id_prestador
+         WHERE c.id_conversa = ?
+           AND (c.id_cliente = ? OR p.id_usuario = ?)
+         LIMIT 1`,
+        [idConversa, idUsuario, idUsuario]
+    );
+    return conversas[0] || null;
+}
+
+app.post('/conversas', autenticar, async (req, res) => {
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    const idPrestador = Number(req.body.id_prestador);
+    if (!Number.isInteger(idPrestador) || idPrestador <= 0) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Selecione um profissional válido.' });
+    }
+
+    try {
+        const usuarios = await consultar('SELECT tipo_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1', [idUsuario]);
+        if (!usuarios[0] || String(usuarios[0].tipo_usuario).toUpperCase() !== 'CLIENTE') {
+            return res.status(403).json({ sucesso: false, mensagem: 'Somente contratantes podem iniciar uma conversa com um prestador.' });
+        }
+
+        const prestadores = await consultar(
+            `SELECT p.id_usuario, u.tipo_usuario
+             FROM prestadores p
+             INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+             WHERE p.id_prestador = ? LIMIT 1`,
+            [idPrestador]
+        );
+        if (!prestadores[0]) return res.status(404).json({ sucesso: false, mensagem: 'Profissional não encontrado.' });
+        const idUsuarioPrestador = Number(prestadores[0].id_usuario);
+        if (idUsuarioPrestador === idUsuario || String(prestadores[0].tipo_usuario).toUpperCase() !== 'PRESTADOR') {
+            return res.status(400).json({ sucesso: false, mensagem: 'Não é possível iniciar conversa com este perfil.' });
+        }
+
+        const existentes = await consultar(
+            `SELECT id_conversa FROM conversas
+             WHERE id_cliente = ? AND id_prestador = ? LIMIT 1`,
+            [idUsuario, idPrestador]
+        );
+        if (existentes[0]) return res.json({ sucesso: true, id_conversa: existentes[0].id_conversa, existente: true });
+
+        const sequencia = await consultar('INSERT INTO conversas_id_seq () VALUES ()');
+        try {
+            await consultar(
+                `INSERT INTO conversas (id_conversa, id_cliente, id_prestador)
+                 VALUES (?, ?, ?)`,
+                [sequencia.insertId, idUsuario, idPrestador]
+            );
+            return res.status(201).json({ sucesso: true, id_conversa: sequencia.insertId, existente: false });
+        } catch (erroInsercao) {
+            if (erroInsercao.code !== 'ER_DUP_ENTRY') throw erroInsercao;
+            const conversaCriada = await consultar(
+                `SELECT id_conversa FROM conversas
+                 WHERE id_cliente = ? AND id_prestador = ? LIMIT 1`,
+                [idUsuario, idPrestador]
+            );
+            if (!conversaCriada[0]) throw erroInsercao;
+            return res.json({ sucesso: true, id_conversa: conversaCriada[0].id_conversa, existente: true });
+        }
+    } catch (erro) {
+        console.error('ERRO AO INICIAR CONVERSA:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível iniciar a conversa.' });
+    }
+});
+
+app.get('/conversas', autenticar, async (req, res) => {
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    try {
+        const conversas = await consultar(
+            `SELECT
+                c.id_conversa,
+                c.id_cliente,
+                c.id_prestador,
+                u.nome AS nome_participante,
+                (SELECT m.mensagem FROM mensagens m WHERE m.id_conversa = c.id_conversa ORDER BY m.id_mensagem DESC LIMIT 1) AS ultima_mensagem,
+                (SELECT m.data_envio FROM mensagens m WHERE m.id_conversa = c.id_conversa ORDER BY m.id_mensagem DESC LIMIT 1) AS ultima_mensagem_em,
+                (SELECT COUNT(*) FROM mensagens m WHERE m.id_conversa = c.id_conversa AND m.id_remetente <> ? AND m.lida = 0) AS nao_lidas,
+                c.data_criacao AS criada_em
+             FROM conversas c
+             INNER JOIN prestadores p ON p.id_prestador = c.id_prestador
+             INNER JOIN usuarios u ON u.id_usuario = CASE
+                WHEN c.id_cliente = ? THEN p.id_usuario
+                ELSE c.id_cliente
+             END
+             WHERE c.id_cliente = ? OR p.id_usuario = ?
+             ORDER BY COALESCE(
+                (SELECT MAX(m.data_envio) FROM mensagens m WHERE m.id_conversa = c.id_conversa),
+                c.data_criacao
+             ) DESC`,
+            [idUsuario, idUsuario, idUsuario, idUsuario]
+        );
+        res.json({ sucesso: true, conversas });
+    } catch (erro) {
+        console.error('ERRO AO LISTAR CONVERSAS:', erro);
+        res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar suas conversas.' });
+    }
+});
+
+app.get('/conversas/:id/mensagens', autenticar, async (req, res) => {
+    const idConversa = Number(req.params.id);
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    const depois = Number(req.query.depois);
+    const antes = Number(req.query.antes);
+    if (!Number.isInteger(idConversa) || idConversa <= 0 ||
+        (req.query.depois && (!Number.isInteger(depois) || depois <= 0)) ||
+        (req.query.antes && (!Number.isInteger(antes) || antes <= 0))) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Conversa ou paginação inválida.' });
+    }
+
+    try {
+        const conversa = await buscarParticipacaoConversa(idConversa, idUsuario);
+        if (!conversa) return res.status(404).json({ sucesso: false, mensagem: 'Conversa não encontrada.' });
+
+        await consultar(
+            `UPDATE mensagens SET lida = 1
+             WHERE id_conversa = ? AND id_remetente <> ? AND lida = 0`,
+            [idConversa, idUsuario]
+        );
+
+        let mensagens;
+        let temMais = false;
+        if (req.query.antes) {
+            mensagens = await consultar(
+                `SELECT m.id_mensagem, m.id_conversa, m.id_remetente, u.nome AS nome_remetente,
+                        m.mensagem AS conteudo, m.data_envio AS criada_em, m.lida
+                 FROM mensagens m INNER JOIN usuarios u ON u.id_usuario = m.id_remetente
+                 WHERE m.id_conversa = ? AND m.id_mensagem < ?
+                 ORDER BY m.id_mensagem DESC LIMIT 51`,
+                [idConversa, antes]
+            );
+            temMais = mensagens.length > 50;
+            if (temMais) mensagens.pop();
+            mensagens.reverse();
+        } else if (req.query.depois) {
+            mensagens = await consultar(
+                `SELECT m.id_mensagem, m.id_conversa, m.id_remetente, u.nome AS nome_remetente,
+                        m.mensagem AS conteudo, m.data_envio AS criada_em, m.lida
+                 FROM mensagens m INNER JOIN usuarios u ON u.id_usuario = m.id_remetente
+                 WHERE m.id_conversa = ? AND m.id_mensagem > ?
+                 ORDER BY m.id_mensagem ASC LIMIT 100`,
+                [idConversa, depois]
+            );
+        } else {
+            mensagens = await consultar(
+                `SELECT m.id_mensagem, m.id_conversa, m.id_remetente, u.nome AS nome_remetente,
+                        m.mensagem AS conteudo, m.data_envio AS criada_em, m.lida
+                 FROM mensagens m INNER JOIN usuarios u ON u.id_usuario = m.id_remetente
+                 WHERE m.id_conversa = ?
+                 ORDER BY m.id_mensagem DESC LIMIT 51`,
+                [idConversa]
+            );
+            temMais = mensagens.length > 50;
+            if (temMais) mensagens.pop();
+            mensagens.reverse();
+        }
+
+        res.json({ sucesso: true, mensagens, tem_mais: temMais });
+    } catch (erro) {
+        console.error('ERRO AO CARREGAR MENSAGENS:', erro);
+        res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar as mensagens.' });
+    }
+});
+
+app.post('/conversas/:id/mensagens', autenticar, async (req, res) => {
+    const idConversa = Number(req.params.id);
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    const conteudo = String(req.body.conteudo || '').trim();
+    if (!Number.isInteger(idConversa) || idConversa <= 0 || !conteudo || conteudo.length > 2000) {
+        return res.status(400).json({ sucesso: false, mensagem: 'A mensagem deve ter entre 1 e 2000 caracteres.' });
+    }
+
+    try {
+        const conversa = await buscarParticipacaoConversa(idConversa, idUsuario);
+        if (!conversa) return res.status(404).json({ sucesso: false, mensagem: 'Conversa não encontrada.' });
+        const sequencia = await consultar('INSERT INTO mensagens_id_seq () VALUES ()');
+        await consultar(
+            `INSERT INTO mensagens (id_mensagem, id_conversa, id_remetente, mensagem, lida)
+             VALUES (?, ?, ?, ?, 0)`,
+            [sequencia.insertId, idConversa, idUsuario, conteudo]
+        );
+        res.status(201).json({ sucesso: true, id_mensagem: sequencia.insertId });
+    } catch (erro) {
+        console.error('ERRO AO ENVIAR MENSAGEM:', erro);
+        res.status(500).json({ sucesso: false, mensagem: 'Não foi possível enviar a mensagem.' });
+    }
+});
+
+app.delete('/conversas/:id/mensagens/:id_mensagem', autenticar, async (req, res) => {
+    const idConversa = Number(req.params.id);
+    const idMensagem = Number(req.params.id_mensagem);
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    if (!Number.isInteger(idConversa) || idConversa <= 0 ||
+        !Number.isInteger(idMensagem) || idMensagem <= 0) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Conversa ou mensagem inválida.' });
+    }
+
+    try {
+        const conversa = await buscarParticipacaoConversa(idConversa, idUsuario);
+        if (!conversa) return res.status(404).json({ sucesso: false, mensagem: 'Conversa não encontrada.' });
+        const resultado = await consultar(
+            `DELETE FROM mensagens
+             WHERE id_mensagem = ? AND id_conversa = ? AND id_remetente = ?`,
+            [idMensagem, idConversa, idUsuario]
+        );
+        if (!resultado.affectedRows) {
+            return res.status(404).json({ sucesso: false, mensagem: 'Mensagem não encontrada ou não enviada por você.' });
+        }
+        res.json({ sucesso: true });
+    } catch (erro) {
+        console.error('ERRO AO EXCLUIR MENSAGEM:', erro);
+        res.status(500).json({ sucesso: false, mensagem: 'Não foi possível excluir a mensagem.' });
     }
 });
 

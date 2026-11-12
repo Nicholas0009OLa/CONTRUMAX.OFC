@@ -1,3 +1,7 @@
+const API_BASE_URL = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+    ? "http://localhost:3000"
+    : "https://contrumax-ofc.onrender.com";
+
 /* ── Auth Modal ─── */
   function openModal(tab) {
     document.getElementById('chatOverlay').classList.remove('open');
@@ -44,83 +48,301 @@ function selectTipo(btn){
 }
 
   /* ── Chat Modal ─── */
+  let conversasDoUsuario = [];
+  let conversaAtivaId = null;
+  let ultimoIdMensagem = 0;
+  let mensagemMaisAntigaId = 0;
+  let temMensagensAntigas = false;
+  let buscandoNovasMensagensChat = false;
+  let intervaloConversasChat = null;
+  let intervaloMensagensChat = null;
+
+  function tokenChat() {
+    return obterUsuarioPainel()?.auth_token || "";
+  }
+
+  async function requisicaoChat(caminho, opcoes = {}) {
+    const token = tokenChat();
+    if (!token) throw new Error("Entre na sua conta para usar as mensagens.");
+    const resposta = await fetch(`${API_BASE_URL}${caminho}`, {
+      ...opcoes,
+      headers: {
+        ...(opcoes.body ? { "Content-Type": "application/json" } : {}),
+        ...(opcoes.headers || {}),
+        Authorization: `Bearer ${token}`
+      }
+    });
+    const tipoResposta = resposta.headers.get('content-type') || '';
+    let resultado;
+    if (tipoResposta.includes('application/json')) {
+      resultado = await resposta.json();
+    } else {
+      await resposta.text();
+      if (resposta.status === 404 && opcoes.method === 'DELETE') {
+        throw new Error('A exclusão ainda não está disponível no servidor ativo. Reinicie o backend local ou atualize o serviço publicado para carregar a nova rota.');
+      }
+      throw new Error(`O servidor retornou uma resposta inesperada (HTTP ${resposta.status}). Verifique se o backend está atualizado e ativo.`);
+    }
+    if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || "Não foi possível concluir a operação do chat.");
+    return resultado;
+  }
+
   function openChat() {
+    if (!tokenChat()) {
+      alert("Entre na sua conta para acessar suas conversas.");
+      openModal("login");
+      return;
+    }
     document.getElementById('modalOverlay').classList.remove('open');
     document.getElementById('chatOverlay').classList.add('open');
     document.body.style.overflow = 'hidden';
+    document.querySelectorAll('.chat-tab').forEach((aba, indice) => aba.classList.toggle('active', indice === 0));
+    document.querySelectorAll('.chat-list-panel').forEach((painel, indice) => painel.classList.toggle('active', indice === 0));
+    closeConversation();
+    document.getElementById('chat-conv-list').innerHTML = '<div class="chat-loading">Carregando conversas...</div>';
+    carregarConversasChat();
+    clearInterval(intervaloConversasChat);
+    intervaloConversasChat = setInterval(carregarConversasChat, 15000);
   }
+
   function closeChat() {
+    clearInterval(intervaloConversasChat);
+    clearInterval(intervaloMensagensChat);
+    intervaloConversasChat = null;
+    intervaloMensagensChat = null;
+    conversaAtivaId = null;
     document.getElementById('chatOverlay').classList.remove('open');
     document.body.style.overflow = '';
   }
+
   function closeChatOutside(e) { if (e.target === document.getElementById('chatOverlay')) closeChat(); }
 
   function switchChatTab(tab) {
     document.querySelectorAll('.chat-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.chat-list-panel').forEach(p => p.classList.remove('active'));
-    const tabs = ['conversas','suporte','novo'];
+    const tabs = ['conversas','suporte'];
     const idx = tabs.indexOf(tab);
+    if (idx < 0) return;
     document.querySelectorAll('.chat-tab')[idx].classList.add('active');
     document.getElementById('chat-panel-' + tab).classList.add('active');
     closeConversation();
+    if (tab === 'conversas') carregarConversasChat();
   }
 
-  let currentContact = null;
-  function openConversation(name, initials, bg, color) {
-    currentContact = { name, initials, bg, color };
+  function openConversation(idConversa) {
+    const id = Number(idConversa);
+    const conversa = conversasDoUsuario.find(item => Number(item.id_conversa) === id);
+    if (!conversa) return;
+    conversaAtivaId = id;
+    ultimoIdMensagem = 0;
+    mensagemMaisAntigaId = 0;
+    temMensagensAntigas = false;
+    clearInterval(intervaloMensagensChat);
     document.getElementById('chat-conv-list').style.display = 'none';
-    const conv = document.getElementById('chat-conversation-view');
-    conv.classList.add('open');
-    document.querySelector('.chat-header-name').textContent = name;
-    document.querySelector('.chat-avatar-header').textContent = initials;
-    document.querySelector('.chat-avatar-header').style.background = bg;
-    document.querySelector('.chat-avatar-header').style.color = color;
-    const msgList = document.getElementById('chat-messages-list');
-    msgList.scrollTop = msgList.scrollHeight;
+    const painel = document.getElementById('chat-conversation-view');
+    painel.classList.add('open');
+    const nome = conversa.nome_participante || 'Conversa';
+    document.querySelector('.chat-header-name').textContent = nome;
+    document.querySelector('.chat-avatar-header').textContent = nome.split(/\s+/).map(parte => parte[0]).slice(0, 2).join('').toUpperCase();
+    const mensagens = document.getElementById('chat-messages-list');
+    mensagens.innerHTML = '<div class="chat-loading">Carregando mensagens...</div>';
+    carregarMensagensChat(id, 'inicial');
+    intervaloMensagensChat = setInterval(() => carregarMensagensChat(id, 'novas'), 3000);
   }
+
   function closeConversation() {
-    document.getElementById('chat-conv-list').style.display = '';
-    const conv = document.getElementById('chat-conversation-view');
-    conv.classList.remove('open');
-    document.querySelector('.chat-header-name').textContent = 'Mensagens';
-    document.querySelector('.chat-avatar-header').textContent = '💬';
-    document.querySelector('.chat-avatar-header').style.background = 'var(--yellow)';
-    document.querySelector('.chat-avatar-header').style.color = 'var(--black)';
+    clearInterval(intervaloMensagensChat);
+    intervaloMensagensChat = null;
+    conversaAtivaId = null;
+    const lista = document.getElementById('chat-conv-list');
+    const painel = document.getElementById('chat-conversation-view');
+    if (lista) lista.style.display = '';
+    if (painel) painel.classList.remove('open');
+    const nome = document.querySelector('.chat-header-name');
+    const avatar = document.querySelector('.chat-avatar-header');
+    if (nome) nome.textContent = 'Mensagens';
+    if (avatar) {
+      avatar.textContent = '💬';
+      avatar.style.background = 'var(--yellow)';
+      avatar.style.color = 'var(--black)';
+    }
   }
-  function sendMessage() {
+
+  async function sendMessage() {
     const input = document.getElementById('chat-input-field');
-    const text = input.value.trim();
-    if (!text) return;
-    const msgList = document.getElementById('chat-messages-list');
-    const now = new Date();
-    const time = now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0');
-    const msg = document.createElement('div');
-    msg.className = 'msg sent';
-    const bubble = document.createElement('div');
-    bubble.className = 'msg-bubble';
-    bubble.textContent = text;
-    const timestamp = document.createElement('div');
-    timestamp.className = 'msg-time';
-    timestamp.textContent = time;
-    msg.append(bubble, timestamp);
-    msgList.appendChild(msg);
-    input.value = '';
-    msgList.scrollTop = msgList.scrollHeight;
-    setTimeout(() => {
-      const reply = document.createElement('div');
-      reply.className = 'msg recv';
-      const replyBubble = document.createElement('div');
-      replyBubble.className = 'msg-bubble';
-      replyBubble.textContent = 'Obrigado pela mensagem! Retornaremos em breve.';
-      const replyTimestamp = document.createElement('div');
-      replyTimestamp.className = 'msg-time';
-      replyTimestamp.textContent = time;
-      reply.append(replyBubble, replyTimestamp);
-      msgList.appendChild(reply);
-      msgList.scrollTop = msgList.scrollHeight;
-    }, 1200);
+    const conteudo = input.value.trim();
+    if (!conversaAtivaId || !conteudo) return;
+    if (conteudo.length > 2000) {
+      alert('A mensagem deve ter no máximo 2000 caracteres.');
+      return;
+    }
+    const botao = document.querySelector('.chat-send');
+    if (botao) botao.disabled = true;
+    try {
+      await requisicaoChat(`/conversas/${conversaAtivaId}/mensagens`, {
+        method: 'POST',
+        body: JSON.stringify({ conteudo })
+      });
+      input.value = '';
+      await carregarMensagensChat(conversaAtivaId, 'novas');
+      carregarConversasChat();
+    } catch (erro) {
+      alert(erro.message);
+    } finally {
+      if (botao) botao.disabled = false;
+    }
   }
-  function sendOnEnter(e) { if (e.key === 'Enter') sendMessage(); }
+
+  function sendOnEnter(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
+
+  async function carregarConversasChat() {
+    const lista = document.getElementById('chat-conv-list');
+    if (!lista || !tokenChat()) return;
+    try {
+      const resultado = await requisicaoChat('/conversas');
+      conversasDoUsuario = resultado.conversas || [];
+      if (!conversasDoUsuario.length) {
+        lista.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div><div>Suas conversas aparecerão aqui.</div><div>Abra o perfil de um prestador para iniciar uma conversa.</div></div>';
+        return;
+      }
+      lista.innerHTML = conversasDoUsuario.map(conversa => {
+        const nome = escaparHTML(conversa.nome_participante || 'Usuário');
+        const iniciais = escaparHTML(String(conversa.nome_participante || 'U').split(/\s+/).map(parte => parte[0]).slice(0, 2).join('').toUpperCase());
+        const ultima = escaparHTML(conversa.ultima_mensagem || 'Conversa iniciada. Envie uma mensagem.');
+        const data = conversa.ultima_mensagem_em || conversa.criada_em;
+        const hora = data ? new Date(data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
+        const naoLidas = Number(conversa.nao_lidas) || 0;
+        return `<button type="button" class="chat-contact ${naoLidas ? 'unread' : ''}" onclick="openConversation(${Number(conversa.id_conversa)})">
+          <span class="chat-contact-avatar">${iniciais}</span>
+          <span class="chat-contact-info"><span class="chat-contact-top"><span class="chat-contact-name">${nome}</span><span class="chat-contact-time">${hora}</span></span><span class="chat-contact-msg">${ultima}</span></span>
+          ${naoLidas ? `<span class="chat-unread-badge">${naoLidas}</span>` : ''}
+        </button>`;
+      }).join('');
+    } catch (erro) {
+      lista.innerHTML = `<div class="chat-empty">${escaparHTML(erro.message)}</div>`;
+    }
+  }
+
+  function htmlMensagemChat(mensagem) {
+    const minha = Number(mensagem.id_remetente) === Number(obterUsuarioPainel()?.id_usuario);
+    const horario = mensagem.criada_em ? new Date(mensagem.criada_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+    return `<div class="msg ${minha ? 'sent' : 'recv'}" data-id="${Number(mensagem.id_mensagem)}">
+      ${!minha ? `<div class="msg-author">${escaparHTML(mensagem.nome_remetente || 'Participante')}</div>` : ''}
+      <div class="msg-bubble">${escaparHTML(mensagem.conteudo)}</div>
+      <div class="msg-footer"><span class="msg-time">${escaparHTML(horario)}</span>${minha ? `<button type="button" class="msg-delete" onclick="apagarMensagemChat(${Number(mensagem.id_conversa)}, ${Number(mensagem.id_mensagem)})" aria-label="Apagar mensagem">Apagar</button>` : ''}</div>
+    </div>`;
+  }
+
+  async function apagarMensagemChat(idConversa, idMensagem) {
+    if (!confirm('Apagar esta mensagem enviada?')) return;
+    try {
+      await requisicaoChat(`/conversas/${Number(idConversa)}/mensagens/${Number(idMensagem)}`, {
+        method: 'DELETE'
+      });
+      document.querySelector(`#chat-messages-list .msg[data-id="${Number(idMensagem)}"]`)?.remove();
+      if (!document.querySelector('#chat-messages-list .msg')) {
+        document.getElementById('chat-messages-list').innerHTML = '<div class="chat-empty-history">Esta conversa ainda não tem mensagens.</div>';
+      }
+      await carregarConversasChat();
+    } catch (erro) {
+      alert(erro.message);
+    }
+  }
+
+  async function carregarMensagensChat(idConversa, modo, idReferencia) {
+    if (!idConversa || Number(idConversa) !== Number(conversaAtivaId)) return;
+    if (modo === 'novas' && buscandoNovasMensagensChat) return;
+    if (modo === 'novas') buscandoNovasMensagensChat = true;
+    const conversaSolicitada = Number(conversaAtivaId);
+    const painel = document.getElementById('chat-messages-list');
+    const parametros = new URLSearchParams();
+    if (modo === 'novas' && ultimoIdMensagem) parametros.set('depois', String(ultimoIdMensagem));
+    if (modo === 'anteriores' && idReferencia) parametros.set('antes', String(idReferencia));
+    const sufixo = parametros.toString() ? `?${parametros.toString()}` : '';
+    try {
+      const resultado = await requisicaoChat(`/conversas/${idConversa}/mensagens${sufixo}`);
+      if (conversaSolicitada !== Number(conversaAtivaId)) return;
+      const mensagens = resultado.mensagens || [];
+      if (modo === 'inicial') {
+        painel.innerHTML = `${resultado.tem_mais ? '<button type="button" class="chat-load-older" onclick="carregarMensagensAntigas()">Carregar mensagens anteriores</button>' : ''}${mensagens.map(htmlMensagemChat).join('')}${mensagens.length ? '' : '<div class="chat-empty-history">Esta conversa ainda não tem mensagens.</div>'}`;
+        if (mensagens.length) {
+          mensagemMaisAntigaId = Number(mensagens[0].id_mensagem);
+          ultimoIdMensagem = Number(mensagens[mensagens.length - 1].id_mensagem);
+        }
+        painel.scrollTop = painel.scrollHeight;
+        temMensagensAntigas = Boolean(resultado.tem_mais);
+        carregarConversasChat();
+        return;
+      }
+      if (modo === 'anteriores') {
+        const alturaAnterior = painel.scrollHeight;
+        const scrollAnterior = painel.scrollTop;
+        const botaoAnterior = painel.querySelector('.chat-load-older');
+        if (mensagens.length && botaoAnterior) {
+          botaoAnterior.insertAdjacentHTML('afterend', mensagens.map(htmlMensagemChat).join(''));
+        }
+        if (!resultado.tem_mais) botaoAnterior?.remove();
+        if (mensagens.length) mensagemMaisAntigaId = Number(mensagens[0].id_mensagem);
+        temMensagensAntigas = Boolean(resultado.tem_mais);
+        painel.scrollTop = scrollAnterior + painel.scrollHeight - alturaAnterior;
+        return;
+      }
+      if (mensagens.length) {
+        painel.querySelector('.chat-empty-history')?.remove();
+        painel.insertAdjacentHTML('beforeend', mensagens.map(htmlMensagemChat).join(''));
+        ultimoIdMensagem = Number(mensagens[mensagens.length - 1].id_mensagem);
+        painel.scrollTop = painel.scrollHeight;
+      }
+    } catch (erro) {
+      if (conversaSolicitada !== Number(conversaAtivaId)) return;
+      if (modo === 'inicial') painel.innerHTML = `<div class="chat-empty">${escaparHTML(erro.message)}</div>`;
+      console.error('Erro ao atualizar mensagens:', erro);
+    } finally {
+      if (modo === 'novas') buscandoNovasMensagensChat = false;
+    }
+  }
+
+  function carregarMensagensAntigas() {
+    if (temMensagensAntigas && conversaAtivaId && mensagemMaisAntigaId) {
+      carregarMensagensChat(conversaAtivaId, 'anteriores', mensagemMaisAntigaId);
+    }
+  }
+
+  let prestadorPendenteParaChat = null;
+
+  async function iniciarConversa(idPrestador, mensagemInicial = '') {
+    if (!tokenChat()) {
+      prestadorPendenteParaChat = Number(idPrestador);
+      alert('Entre na sua conta para conversar com este profissional.');
+      fecharPerfilPrestador();
+      openModal('login');
+      return false;
+    }
+    try {
+      const resultado = await requisicaoChat('/conversas', {
+        method: 'POST',
+        body: JSON.stringify({ id_prestador: Number(idPrestador) })
+      });
+      if (mensagemInicial.trim()) {
+        await requisicaoChat(`/conversas/${resultado.id_conversa}/mensagens`, {
+          method: 'POST',
+          body: JSON.stringify({ conteudo: mensagemInicial.trim() })
+        });
+      }
+      if (document.getElementById('modalPerfilPrestador')?.classList.contains('ativo')) {
+        fecharPerfilPrestador();
+      }
+      openChat();
+      await carregarConversasChat();
+      const lista = document.querySelectorAll('.chat-tab');
+      if (lista[0]) switchChatTab('conversas');
+      openConversation(resultado.id_conversa);
+      return true;
+    } catch (erro) {
+      alert(erro.message);
+      return false;
+    }
+  }
 
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeChat(); } });
   
@@ -145,7 +367,7 @@ async function cadastrarUsuario() {
     try {
 
         const resposta = await fetch(
-            "https://contrumax-ofc.onrender.com/cadastro",
+            `${API_BASE_URL}/cadastro`,
             {
                 method: "POST",
                 headers: {
@@ -165,6 +387,7 @@ async function cadastrarUsuario() {
                     id_usuario: resultado.id,
                     nome: nome,
                     email: email,
+                    tipo_usuario: tipo_usuario === "profissional" ? "PRESTADOR" : "CLIENTE",
                     auth_token: resultado.token
                 })
             );
@@ -220,7 +443,7 @@ async function cadastrarUsuario() {
                 }
 
                 const respostaProfissional = await fetch(
-                    "https://contrumax-ofc.onrender.com/cadastro-prestador",
+                    `${API_BASE_URL}/cadastro-prestador`,
                     {
                         method: "POST",
                         headers: { Authorization: `Bearer ${resultado.token}` },
@@ -263,7 +486,7 @@ async function loginUsuario() {
     try {
 
         const resposta = await fetch(
-            "https://contrumax-ofc.onrender.com/login",
+            `${API_BASE_URL}/login`,
             {
                 method: "POST",
                 headers: {
@@ -290,6 +513,12 @@ async function loginUsuario() {
     closeModal();
 
     verificarLogin(); // atualiza o menu imediatamente
+
+    if (prestadorPendenteParaChat) {
+        const idPrestadorPendente = prestadorPendenteParaChat;
+        prestadorPendenteParaChat = null;
+        iniciarConversa(idPrestadorPendente);
+    }
 
 } else {
 
@@ -342,7 +571,7 @@ function abrirEdicaoEquipamento(id) {
             </div>
             <label>Fotos atuais <span class="ajuda-editar-fotos">Desmarque as que deseja remover.</span></label>
             <div class="fotos-editar-equipamento">
-                ${fotos.map((foto, i) => `<label class="foto-editar-item"><img src="https://contrumax-ofc.onrender.com${escaparTextoPainel(foto)}" alt="Foto atual ${i + 1}"><span><input type="checkbox" name="fotosManter" value="${escaparTextoPainel(foto)}" checked> Manter</span></label>`).join("") || "<p>Este anúncio não tem fotos.</p>"}
+                ${fotos.map((foto, i) => `<label class="foto-editar-item"><img src="${API_BASE_URL}${escaparTextoPainel(foto)}" alt="Foto atual ${i + 1}"><span><input type="checkbox" name="fotosManter" value="${escaparTextoPainel(foto)}" checked> Manter</span></label>`).join("") || "<p>Este anúncio não tem fotos.</p>"}
             </div>
             <label>Adicionar fotos<input name="fotos" type="file" accept="image/*" multiple></label>
             <small>Máximo de 5 fotos no total.</small>
@@ -378,7 +607,7 @@ async function salvarEdicaoEquipamento(event, id) {
     const botao = form.querySelector('button[type="submit"]');
     botao.disabled = true;
     try {
-        const resposta = await fetch(`https://contrumax-ofc.onrender.com/equipamentos/${id}`, {
+        const resposta = await fetch(`${API_BASE_URL}/equipamentos/${id}`, {
             method: "PUT",
             headers: { Authorization: `Bearer ${usuario.auth_token}` },
             body: dados
@@ -400,7 +629,7 @@ async function alternarDisponibilidadeEquipamento(id) {
     const equipamento = equipamentosDoPainel.find(item => Number(item.id_equipamento) === Number(id));
     if (!equipamento) return;
     try {
-        const resposta = await fetch(`https://contrumax-ofc.onrender.com/equipamentos/${id}/disponibilidade`, {
+        const resposta = await fetch(`${API_BASE_URL}/equipamentos/${id}/disponibilidade`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${usuario.auth_token}` },
             body: JSON.stringify({ disponivel: Number(equipamento.disponivel) === 1 ? 0 : 1 })
@@ -416,7 +645,7 @@ async function excluirEquipamento(id) {
     const usuario = usuarioComSessao();
     if (!usuario) return;
     try {
-        const resposta = await fetch(`https://contrumax-ofc.onrender.com/equipamentos/${id}`, {
+        const resposta = await fetch(`${API_BASE_URL}/equipamentos/${id}`, {
             method: "DELETE",
             headers: { Authorization: `Bearer ${usuario.auth_token}` }
         });
@@ -453,7 +682,7 @@ async function sairDaConta() {
     const usuario = obterUsuarioPainel();
     if (usuario?.auth_token) {
         try {
-            await fetch("https://contrumax-ofc.onrender.com/logout", {
+            await fetch(`${API_BASE_URL}/logout`, {
                 method: "POST",
                 headers: { Authorization: `Bearer ${usuario.auth_token}` }
             });
@@ -650,7 +879,7 @@ async function carregarMeusAnuncios() {
     try {
 
         const resposta = await fetch(
-            `https://contrumax-ofc.onrender.com/meus-anuncios/${encodeURIComponent(usuario.id_usuario)}`,
+            `${API_BASE_URL}/meus-anuncios/${encodeURIComponent(usuario.id_usuario)}`,
             { headers: { Authorization: `Bearer ${usuario.auth_token || ""}` } }
         );
 
@@ -699,7 +928,7 @@ async function carregarMeusAnuncios() {
                     <div class="fotos-anuncio-painel">
                         ${(prestador.fotos || []).map(foto => `
                             <img
-                                src="https://contrumax-ofc.onrender.com${escaparTextoPainel(foto)}"
+                                src="${API_BASE_URL}${escaparTextoPainel(foto)}"
                                 alt="Foto do trabalho profissional"
                             >
                         `).join("")}
@@ -767,7 +996,7 @@ async function carregarMeusAnuncios() {
 
                             ${(equipamento.fotos || []).map(foto => `
                                 <img
-                                    src="https://contrumax-ofc.onrender.com${escaparTextoPainel(foto)}"
+                                    src="${API_BASE_URL}${escaparTextoPainel(foto)}"
                                     alt="Foto do equipamento"
                                 >
                             `).join("")}
@@ -831,7 +1060,7 @@ function renderizarPrestadores(prestadores) {
         const verificado = [1, true, "1", "true"].includes(prestador.verificado);
         const galeriaFotos = fotos.length ? `
             <div class="prof-gallery" id="carrossel-prestador-${id}" data-indice="0">
-                <img class="prof-photo" src="https://contrumax-ofc.onrender.com${escaparHTML(fotos[0])}" alt="Trabalho de ${nome}" data-indice="0">
+                <img class="prof-photo" src="${API_BASE_URL}${escaparHTML(fotos[0])}" alt="Trabalho de ${nome}" data-indice="0">
                 ${fotos.length > 1 ? `
                     <button class="prof-photo-arrow prof-photo-prev" onclick="mudarFotoPrestador(${id}, -1)" type="button" aria-label="Foto anterior">❮</button>
                     <button class="prof-photo-arrow prof-photo-next" onclick="mudarFotoPrestador(${id}, 1)" type="button" aria-label="Próxima foto">❯</button>
@@ -880,7 +1109,7 @@ function mudarFotoPrestador(idPrestador, direcao) {
 
     const imagem = galeria.querySelector(".prof-photo");
 
-    imagem.src = `https://contrumax-ofc.onrender.com${prestador.fotos[indice]}`;
+    imagem.src = `${API_BASE_URL}${prestador.fotos[indice]}`;
     imagem.dataset.indice = indice;
 
     const contador = document.getElementById(
@@ -915,7 +1144,7 @@ async function buscarPrestadores(event) {
     if (botao) botao.disabled = true;
 
     try {
-        const resposta = await fetch(`https://contrumax-ofc.onrender.com/prestadores?${parametros.toString()}`);
+        const resposta = await fetch(`${API_BASE_URL}/prestadores?${parametros.toString()}`);
         if (!resposta.ok) throw new Error("Falha ao consultar profissionais.");
         const resultados = await resposta.json();
         if (numeroRequisicao !== requisicaoBuscaPrestadores) return;
@@ -960,11 +1189,15 @@ function abrirPerfilPrestador(id) {
     const totalAvaliacoes = Number(prestador.total_avaliacoes) || 0;
     const temAvaliacao = totalAvaliacoes > 0 && Number.isFinite(nota);
     const verificado = [1, true, "1", "true"].includes(prestador.verificado);
-    const contato = '<button class="perfil-botao-contato" type="button" disabled aria-disabled="true">💬 Chat em breve</button>';
+    const usuarioAtivo = obterUsuarioPainel();
+    const podeIniciarConversa = !usuarioAtivo || !usuarioAtivo.tipo_usuario || String(usuarioAtivo.tipo_usuario).toUpperCase() === "CLIENTE";
+    const contato = podeIniciarConversa
+        ? `<button class="perfil-botao-contato" type="button" onclick="iniciarConversa(${Number(id)})">💬 Entrar em contato</button>`
+        : '<button class="perfil-botao-contato" type="button" disabled>Contato disponível para contratantes</button>';
     const avatar = fotos.length
-        ? `<img class="perfil-foto-principal" id="perfilFotoPrincipal" src="https://contrumax-ofc.onrender.com${escaparHTML(fotos[0])}" alt="Trabalho de ${nome}">`
+        ? `<img class="perfil-foto-principal" id="perfilFotoPrincipal" src="${API_BASE_URL}${escaparHTML(fotos[0])}" alt="Trabalho de ${nome}">`
         : `<div class="perfil-avatar-grande">${escaparHTML(String(prestador.nome || "P").split(" ").map(parte => parte[0]).slice(0, 2).join(""))}</div>`;
-    const galeria = fotos.length ? `<section class="perfil-galeria-secao"><h3>📷 Meus trabalhos</h3><div class="perfil-galeria">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoPerfilPrestador(${Number(id)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="https://contrumax-ofc.onrender.com${escaparHTML(foto)}" alt="Trabalho ${indice + 1} de ${nome}"></button>`).join("")}</div></section>` : "";
+    const galeria = fotos.length ? `<section class="perfil-galeria-secao"><h3>📷 Meus trabalhos</h3><div class="perfil-galeria">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoPerfilPrestador(${Number(id)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="${API_BASE_URL}${escaparHTML(foto)}" alt="Trabalho ${indice + 1} de ${nome}"></button>`).join("")}</div></section>` : "";
     const notaHtml = temAvaliacao
         ? `<strong>⭐ ${nota.toFixed(1)}</strong> de 5 (${totalAvaliacoes} avaliações)`
         : '<span>Este profissional ainda não recebeu avaliações.</span>';
@@ -1006,7 +1239,7 @@ function selecionarFotoPerfilPrestador(id, indice) {
     const prestador = todosPrestadores.find(item => Number(item.id_prestador) === Number(id));
     const imagem = document.getElementById("perfilFotoPrincipal");
     if (prestador?.fotos?.[indice] && imagem) {
-        imagem.src = `https://contrumax-ofc.onrender.com${prestador.fotos[indice]}`;
+        imagem.src = `${API_BASE_URL}${prestador.fotos[indice]}`;
     }
 }
 
@@ -1030,7 +1263,7 @@ document.getElementById("camposProfissional").style.display = "none";
 
 let todosEquipamentos = [];
 
-fetch("https://contrumax-ofc.onrender.com/equipamentos")
+fetch(`${API_BASE_URL}/equipamentos`)
 .then(res => res.json())
 .then(equipamentos => {
 
@@ -1059,7 +1292,7 @@ function renderizarEquipamentos(equipamentos) {
         const idCarrossel = `carrossel-${equipamento.id_equipamento}`;
 
         const imagemInicial = fotos.length > 0
-            ? `https://contrumax-ofc.onrender.com${fotos[0]}`
+            ? `${API_BASE_URL}${fotos[0]}`
             : "";
 
         lista.innerHTML += `
@@ -1165,7 +1398,7 @@ function mudarFoto(idEquipamento, direcao) {
     galeria.dataset.indice = indiceAtual;
 
     imagem.src =
-        `https://contrumax-ofc.onrender.com${equipamento.fotos[indiceAtual]}`;
+        `${API_BASE_URL}${equipamento.fotos[indiceAtual]}`;
 
     contador.textContent =
         `${indiceAtual + 1}/${equipamento.fotos.length}`;
@@ -1271,7 +1504,7 @@ async function cadastrarEquipamento() {
     try {
 
         const resposta = await fetch(
-            "https://contrumax-ofc.onrender.com/cadastro-equipamento",
+            `${API_BASE_URL}/cadastro-equipamento`,
             {
                 method: "POST",
                 headers: { Authorization: `Bearer ${usuario.auth_token || ""}` },
@@ -1458,7 +1691,7 @@ function atualizarFotoAmpliada() {
     if (fotos.length === 0) return;
 
     imagemAmpliada.src =
-        `https://contrumax-ofc.onrender.com${fotos[indiceFotoAmpliada]}`;
+        `${API_BASE_URL}${fotos[indiceFotoAmpliada]}`;
 
     contadorModalFoto.textContent =
         `${indiceFotoAmpliada + 1}/${fotos.length}`;

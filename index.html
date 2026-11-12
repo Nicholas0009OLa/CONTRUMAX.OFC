@@ -472,7 +472,7 @@
           </div>
 
           <div class="chat-header-status">
-            Online
+            Mensagens salvas na plataforma
           </div>
 
         </div>
@@ -513,14 +513,6 @@
       </div>
 
 
-      <div
-        class="chat-tab"
-        onclick="switchChatTab('novo')">
-
-        ✚ Nova Mensagem
-
-      </div>
-
     </div>
 
 
@@ -536,187 +528,8 @@
 
 
         <div id="chat-conv-list">
-
-
-          <div
-            class="chat-contact unread"
-            onclick="openConversation(
-              'Ricardo Santos',
-              'RS',
-              '#F5A800',
-              '#111'
-            )">
-
-            <div
-              class="chat-contact-avatar"
-              style="background:#F5A800;color:#111;">
-
-              RS
-
-            </div>
-
-
-            <div class="chat-contact-info">
-
-              <div class="chat-contact-top">
-
-                <div class="chat-contact-name">
-                  Ricardo Santos – Pedreiro
-                </div>
-
-                <div class="chat-contact-time">
-                  14:30
-                </div>
-
-              </div>
-
-
-              <div class="chat-contact-msg">
-                Boa tarde! A escavadeira ainda está disponível?
-              </div>
-
-            </div>
-
-
-            <div class="chat-unread-badge">
-              2
-            </div>
-
-          </div>
-
-
-
-          <div
-            class="chat-contact"
-            onclick="openConversation(
-              'Fernando Alves',
-              'FA',
-              '#1A1A1A',
-              '#F5A800'
-            )">
-
-            <div
-              class="chat-contact-avatar"
-              style="background:#1A1A1A;color:#F5A800;">
-
-              FA
-
-            </div>
-
-
-            <div class="chat-contact-info">
-
-              <div class="chat-contact-top">
-
-                <div class="chat-contact-name">
-                  Fernando Alves – Eletricista
-                </div>
-
-                <div class="chat-contact-time">
-                  11:45
-                </div>
-
-              </div>
-
-
-              <div class="chat-contact-msg">
-                Perfeito, qual o valor da diária?
-              </div>
-
-            </div>
-
-          </div>
-
-
-
-          <div
-            class="chat-contact"
-            onclick="openConversation(
-              'Carlos Pinto',
-              'CP',
-              '#F5A800',
-              '#111'
-            )">
-
-            <div
-              class="chat-contact-avatar"
-              style="background:#F5A800;color:#111;">
-
-              CP
-
-            </div>
-
-
-            <div class="chat-contact-info">
-
-              <div class="chat-contact-top">
-
-                <div class="chat-contact-name">
-                  Carlos Pinto – Pintor
-                </div>
-
-                <div class="chat-contact-time">
-                  Ontem
-                </div>
-
-              </div>
-
-
-              <div class="chat-contact-msg">
-                Pode me enviar as fotos do ambiente?
-              </div>
-
-            </div>
-
-          </div>
-
-
-
-          <div
-            class="chat-contact"
-            onclick="openConversation(
-              'Suporte CONSTRUMAX',
-              'SC',
-              '#F5A800',
-              '#111'
-            )">
-
-            <div
-              class="chat-contact-avatar"
-              style="background:#F5A800;color:#111;">
-
-              SC
-
-            </div>
-
-
-            <div class="chat-contact-info">
-
-              <div class="chat-contact-top">
-
-                <div class="chat-contact-name">
-                  Suporte CONSTRUMAX
-                </div>
-
-                <div class="chat-contact-time">
-                  2 dias
-                </div>
-
-              </div>
-
-
-              <div class="chat-contact-msg">
-                Olá! Como podemos ajudar?
-              </div>
-
-            </div>
-
-          </div>
-
-
+          <div class="chat-empty"><div class="chat-empty-icon">💬</div><div>Entre na sua conta para ver suas conversas.</div></div>
         </div>
-
-
 
         <!-- CONVERSA -->
 
@@ -737,61 +550,8 @@
           <div
             class="chat-messages"
             id="chat-messages-list">
-
-
-            <div class="msg recv">
-
-              <div class="msg-bubble">
-                Boa tarde! A escavadeira ainda está disponível para a próxima semana?
-              </div>
-
-              <div class="msg-time">
-                14:28
-              </div>
-
+              <div class="chat-empty-history">As mensagens desta conversa aparecerão aqui.</div>
             </div>
-
-
-            <div class="msg sent">
-
-              <div class="msg-bubble">
-                Olá João! Sim, está disponível. Qual o período que precisa?
-              </div>
-
-              <div class="msg-time">
-                14:29
-              </div>
-
-            </div>
-
-
-            <div class="msg recv">
-
-              <div class="msg-bubble">
-                Preciso de segunda a sexta, das 7h às 17h. Qual o valor?
-              </div>
-
-              <div class="msg-time">
-                14:29
-              </div>
-
-            </div>
-
-
-            <div class="msg sent">
-
-              <div class="msg-bubble">
-                O valor é R$ 1.200 a diária com operador incluso.
-              </div>
-
-              <div class="msg-time">
-                14:30
-              </div>
-
-            </div>
-
-
-          </div>
 
 
           <div class="chat-input-row">
@@ -800,6 +560,7 @@
               class="chat-input"
               id="chat-input-field"
               type="text"
+              maxlength="2000"
               placeholder="Digite sua mensagem..."
               onkeydown="sendOnEnter(event)">
 
@@ -837,123 +598,25 @@
           </div>
 
           <div>
-            Nossa equipe responde em até 2 horas nos dias úteis.
+            O atendimento por chat estará disponível em breve.
           </div>
 
 
           <button
             class="btn-prof-contact"
             style="margin-top:12px;width:auto;padding:10px 24px;"
-            onclick="openConversation('Suporte CONSTRUMAX','SC','#F5A800','#111');switchChatTab('conversas')">
+            type="button"
+            disabled>
 
-            Iniciar atendimento
-
-          </button>
-
-        </div>
-
-      </div>
-
-
-
-      <!-- NOVA MENSAGEM -->
-
-      <div
-        class="chat-list-panel"
-        id="chat-panel-novo">
-
-        <div style="padding:20px;">
-
-          <div class="mform-group">
-
-            <label style="color:#888;">
-              Para quem deseja enviar?
-            </label>
-
-
-            <select
-              style="
-                width:100%;
-                background:rgba(255,255,255,0.05);
-                border:1px solid rgba(255,255,255,0.1);
-                color:#fff;
-                padding:11px 14px;
-                font-size:13px;
-                font-family:Inter,sans-serif;
-                outline:none;
-                border-radius:0;
-              ">
-
-              <option value="">
-                Selecione um profissional ou serviço
-              </option>
-
-              <option>
-                Ricardo Santos – Pedreiro
-              </option>
-
-              <option>
-                Fernando Alves – Eletricista
-              </option>
-
-              <option>
-                Marcos Lima – Encanador
-              </option>
-
-              <option>
-                Carlos Pinto – Pintor
-              </option>
-
-              <option>
-                João Oliveira – Eng. Civil
-              </option>
-
-              <option>
-                Suporte CONSTRUMAX
-              </option>
-
-            </select>
-
-          </div>
-
-
-          <div class="mform-group">
-
-            <label style="color:#888;">
-              Mensagem
-            </label>
-
-            <textarea
-              style="
-                width:100%;
-                background:rgba(255,255,255,0.05);
-                border:1px solid rgba(255,255,255,0.1);
-                color:#fff;
-                padding:11px 14px;
-                font-size:13px;
-                font-family:Inter,sans-serif;
-                outline:none;
-                border-radius:0;
-                resize:vertical;
-                min-height:90px;
-              "
-              placeholder="Olá! Gostaria de...">
-            </textarea>
-
-          </div>
-
-
-          <button
-            class="btn-modal-submit"
-            style="margin-top:0;">
-
-            Enviar mensagem
+            Em breve
 
           </button>
 
         </div>
 
       </div>
+
+
 
     </div>
 
