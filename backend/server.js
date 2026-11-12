@@ -574,6 +574,10 @@ app.get('/prestadores', (req, res) => {
             p.*,
             u.nome,
             u.telefone,
+            (SELECT AVG(av.nota) FROM avaliacoes_solicitacoes av
+             WHERE av.id_prestador = p.id_prestador AND av.alvo = 'PRESTADOR' AND av.nota IS NOT NULL) AS nota_media_avaliacoes,
+            (SELECT COUNT(*) FROM avaliacoes_solicitacoes av
+             WHERE av.id_prestador = p.id_prestador AND av.alvo = 'PRESTADOR' AND av.nota IS NOT NULL) AS total_notas_avaliacoes,
             (
                 SELECT GROUP_CONCAT(DISTINCT e.nome SEPARATOR '|||')
                 FROM prestador_especialidade pe
@@ -613,6 +617,10 @@ app.get('/prestadores', (req, res) => {
 
             const prestadores = resultado.map(prestador => ({
                 ...prestador,
+                avaliacao: prestador.nota_media_avaliacoes !== null && prestador.nota_media_avaliacoes !== undefined
+                    ? Number(prestador.nota_media_avaliacoes) : prestador.avaliacao,
+                total_avaliacoes: Number(prestador.total_notas_avaliacoes) > 0
+                    ? Number(prestador.total_notas_avaliacoes) : prestador.total_avaliacoes,
                 especialidades: prestador.especialidades
                     ? prestador.especialidades.split('|||')
                     : [],
@@ -642,8 +650,13 @@ app.get('/equipamentos', (req, res) => {
         SELECT
             e.*,
             MAX(u.nome) AS nome,
+            MAX(p.id_usuario) AS id_usuario_prestador,
             MAX(p.cidade) AS cidade,
             MAX(p.estado) AS estado,
+            (SELECT AVG(av.nota) FROM avaliacoes_solicitacoes av
+             WHERE av.id_equipamento = e.id_equipamento AND av.alvo = 'EQUIPAMENTO' AND av.nota IS NOT NULL) AS nota_media_avaliacoes,
+            (SELECT COUNT(*) FROM avaliacoes_solicitacoes av
+             WHERE av.id_equipamento = e.id_equipamento AND av.alvo = 'EQUIPAMENTO' AND av.nota IS NOT NULL) AS total_notas_avaliacoes,
             GROUP_CONCAT(
                 DISTINCT f.url_foto
                 ORDER BY f.id_foto
@@ -679,6 +692,8 @@ app.get('/equipamentos', (req, res) => {
 
             const equipamentos = resultado.map(equipamento => ({
                 ...equipamento,
+                avaliacao: equipamento.nota_media_avaliacoes === null ? null : Number(equipamento.nota_media_avaliacoes),
+                total_avaliacoes: Number(equipamento.total_notas_avaliacoes) || 0,
                 fotos: equipamento.fotos
                     ? equipamento.fotos.split('|||')
                     : []
@@ -1381,6 +1396,572 @@ app.delete('/conversas/:id/mensagens/:id_mensagem', autenticar, async (req, res)
     } catch (erro) {
         console.error('ERRO AO EXCLUIR MENSAGEM:', erro);
         res.status(500).json({ sucesso: false, mensagem: 'Não foi possível excluir a mensagem.' });
+    }
+});
+
+function dataISOValida(valor) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(valor || ''))) return false;
+    const data = new Date(`${valor}T00:00:00.000Z`);
+    return Number.isFinite(data.getTime()) && data.toISOString().slice(0, 10) === valor;
+}
+
+function hojeEmSaoPaulo() {
+    const partes = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date());
+    const valores = Object.fromEntries(partes.map(parte => [parte.type, parte.value]));
+    return `${valores.year}-${valores.month}-${valores.day}`;
+}
+
+async function consultarNaConexao(conexao, sql, valores = []) {
+    const [resultado] = await conexao.query(sql, valores);
+    return resultado;
+}
+
+async function obterOuCriarConversaNaConexao(conexao, idCliente, idPrestador) {
+    const existentes = await consultarNaConexao(
+        conexao,
+        'SELECT id_conversa FROM conversas WHERE id_cliente = ? AND id_prestador = ? LIMIT 1',
+        [idCliente, idPrestador]
+    );
+    if (existentes[0]) return Number(existentes[0].id_conversa);
+
+    const sequencia = await consultarNaConexao(conexao, 'INSERT INTO conversas_id_seq () VALUES ()');
+    try {
+        await consultarNaConexao(
+            conexao,
+            'INSERT INTO conversas (id_conversa, id_cliente, id_prestador) VALUES (?, ?, ?)',
+            [sequencia.insertId, idCliente, idPrestador]
+        );
+        return Number(sequencia.insertId);
+    } catch (erro) {
+        if (erro.code !== 'ER_DUP_ENTRY') throw erro;
+        const conversaCriada = await consultarNaConexao(
+            conexao,
+            'SELECT id_conversa FROM conversas WHERE id_cliente = ? AND id_prestador = ? LIMIT 1',
+            [idCliente, idPrestador]
+        );
+        if (!conversaCriada[0]) throw erro;
+        return Number(conversaCriada[0].id_conversa);
+    }
+}
+
+async function tipoContaUsuario(idUsuario) {
+    const usuarios = await consultar('SELECT tipo_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1', [idUsuario]);
+    return usuarios[0]?.tipo_usuario || null;
+}
+
+app.post('/solicitacoes', autenticar, async (req, res) => {
+    const idCliente = req.usuarioAutenticado.id_usuario;
+    const corpo = req.body || {};
+    const tipo = String(corpo.tipo || '').trim().toUpperCase();
+    const idempotencia = String(corpo.idempotencia || '').trim();
+    const tituloRecebido = String(corpo.titulo || '').trim();
+    const descricao = String(corpo.descricao || '').trim();
+    const local = String(corpo.local_atendimento || '').trim();
+    const observacoes = String(corpo.observacoes || '').trim();
+    const dataInicio = String(corpo.data_inicio || '').trim();
+    const dataFim = String(corpo.data_fim || '').trim();
+    const quantidadeRecebida = corpo.quantidade;
+    const idPrestadorRecebido = Number(corpo.id_prestador);
+    const idEquipamentoRecebido = Number(corpo.id_equipamento);
+
+    if (!['SERVICO', 'EQUIPAMENTO'].includes(tipo) ||
+        !/^[\w-]{16,64}$/.test(idempotencia) ||
+        !descricao || descricao.length > 4000 || !local || local.length > 255 ||
+        !dataISOValida(dataInicio) || dataInicio < hojeEmSaoPaulo() ||
+        observacoes.length > 2000) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Confira os dados obrigatórios da solicitação.' });
+    }
+
+    if (tipo === 'SERVICO' && (!Number.isInteger(idPrestadorRecebido) || idPrestadorRecebido <= 0 ||
+        !tituloRecebido || tituloRecebido.length > 150 || dataFim)) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Informe o serviço, o profissional e a data prevista.' });
+    }
+
+    const quantidade = tipo === 'EQUIPAMENTO' ? Number(quantidadeRecebida) : 1;
+    if (tipo === 'EQUIPAMENTO' && (!Number.isInteger(idEquipamentoRecebido) || idEquipamentoRecebido <= 0 ||
+        !Number.isInteger(quantidade) || quantidade < 1 || !dataISOValida(dataFim) || dataFim < dataInicio)) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Informe o período e a quantidade válidos para o aluguel.' });
+    }
+
+    let conexao;
+    let transacaoAtiva = false;
+    try {
+        const papel = String(await tipoContaUsuario(idCliente) || '').toUpperCase();
+        if (papel !== 'CLIENTE') {
+            return res.status(403).json({ sucesso: false, mensagem: 'Somente contratantes podem enviar solicitações.' });
+        }
+
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction();
+        transacaoAtiva = true;
+
+        const anterior = await consultarNaConexao(
+            conexao,
+            'SELECT id_solicitacao, id_conversa FROM solicitacoes WHERE id_cliente = ? AND chave_idempotencia = ? LIMIT 1',
+            [idCliente, idempotencia]
+        );
+        if (anterior[0]) {
+            await conexao.commit();
+            transacaoAtiva = false;
+            return res.json({ sucesso: true, id_solicitacao: anterior[0].id_solicitacao, id_conversa: anterior[0].id_conversa, duplicada: true });
+        }
+
+        let idPrestador = idPrestadorRecebido;
+        let idEquipamento = null;
+        let titulo = tituloRecebido;
+        let valorDiaria = null;
+
+        if (tipo === 'SERVICO') {
+            const prestadores = await consultarNaConexao(
+                conexao,
+                `SELECT p.id_prestador, p.id_usuario, u.tipo_usuario
+                 FROM prestadores p INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+                 WHERE p.id_prestador = ? LIMIT 1`,
+                [idPrestador]
+            );
+            if (!prestadores[0] || String(prestadores[0].tipo_usuario).toUpperCase() !== 'PRESTADOR') {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(404).json({ sucesso: false, mensagem: 'Profissional não encontrado.' });
+            }
+            if (Number(prestadores[0].id_usuario) === idCliente) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(400).json({ sucesso: false, mensagem: 'Você não pode solicitar um serviço para si mesmo.' });
+            }
+        } else {
+            const equipamentos = await consultarNaConexao(
+                conexao,
+                `SELECT e.id_equipamento, e.id_prestador, e.nome_equipamento, e.quantidade,
+                        e.disponivel, e.valor_diaria, p.id_usuario, u.tipo_usuario
+                 FROM equipamentos e
+                 INNER JOIN prestadores p ON p.id_prestador = e.id_prestador
+                 INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+                 WHERE e.id_equipamento = ? FOR UPDATE`,
+                [idEquipamentoRecebido]
+            );
+            if (!equipamentos[0]) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(404).json({ sucesso: false, mensagem: 'Equipamento não encontrado.' });
+            }
+            const equipamento = equipamentos[0];
+            if (String(equipamento.tipo_usuario).toUpperCase() !== 'PRESTADOR') {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(404).json({ sucesso: false, mensagem: 'Equipamento não encontrado.' });
+            }
+            if (Number(equipamento.id_usuario) === idCliente) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(400).json({ sucesso: false, mensagem: 'Você não pode solicitar seu próprio equipamento.' });
+            }
+            if (Number(equipamento.disponivel) !== 1 || quantidade > Number(equipamento.quantidade || 0)) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(409).json({ sucesso: false, mensagem: 'O equipamento não está disponível na quantidade solicitada.' });
+            }
+            const reservas = await consultarNaConexao(
+                conexao,
+                `SELECT quantidade
+                 FROM solicitacoes
+                 WHERE id_equipamento = ? AND status IN ('ACEITA', 'EM_ANDAMENTO')
+                   AND data_inicio <= ? AND data_fim >= ?
+                 ORDER BY id_solicitacao FOR UPDATE`,
+                [idEquipamentoRecebido, dataFim, dataInicio]
+            );
+            const quantidadeReservada = reservas.reduce((total, reserva) => total + Number(reserva.quantidade || 0), 0);
+            if (quantidadeReservada + quantidade > Number(equipamento.quantidade || 0)) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(409).json({ sucesso: false, mensagem: 'A quantidade solicitada não está livre para todo esse período.' });
+            }
+            idPrestador = Number(equipamento.id_prestador);
+            idEquipamento = Number(equipamento.id_equipamento);
+            titulo = String(equipamento.nome_equipamento);
+            valorDiaria = equipamento.valor_diaria;
+        }
+
+        const idConversa = await obterOuCriarConversaNaConexao(conexao, idCliente, idPrestador);
+        const sequencia = await consultarNaConexao(conexao, 'INSERT INTO solicitacoes_id_seq () VALUES ()');
+        await consultarNaConexao(
+            conexao,
+            `INSERT INTO solicitacoes
+                (id_solicitacao, chave_idempotencia, id_cliente, id_prestador, id_equipamento,
+                 id_conversa, tipo, titulo, descricao, local_atendimento, data_inicio, data_fim,
+                 quantidade, valor_diaria, observacoes, status, cliente_visualizou_em)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AGUARDANDO_RESPOSTA', CURRENT_TIMESTAMP)`,
+            [sequencia.insertId, idempotencia, idCliente, idPrestador, idEquipamento, idConversa,
+                tipo, titulo, descricao, local, dataInicio, tipo === 'EQUIPAMENTO' ? dataFim : null,
+                quantidade, valorDiaria, observacoes || null]
+        );
+        await conexao.commit();
+        transacaoAtiva = false;
+        return res.status(201).json({ sucesso: true, id_solicitacao: sequencia.insertId, id_conversa: idConversa });
+    } catch (erro) {
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        if (erro.code === 'ER_DUP_ENTRY') {
+            try {
+                const duplicada = await consultar(
+                    'SELECT id_solicitacao, id_conversa FROM solicitacoes WHERE id_cliente = ? AND chave_idempotencia = ? LIMIT 1',
+                    [idCliente, idempotencia]
+                );
+                if (duplicada[0]) return res.json({ sucesso: true, id_solicitacao: duplicada[0].id_solicitacao, id_conversa: duplicada[0].id_conversa, duplicada: true });
+            } catch (erroConsulta) {
+                console.error('ERRO AO RECUPERAR SOLICITAÇÃO REPETIDA:', erroConsulta);
+            }
+        }
+        console.error('ERRO AO CRIAR SOLICITAÇÃO:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível registrar a solicitação.' });
+    } finally {
+        if (conexao) conexao.release();
+    }
+});
+
+const SQL_LISTA_SOLICITACOES = `
+    SELECT s.id_solicitacao, s.id_cliente, s.id_prestador, s.id_equipamento,
+           s.id_conversa, s.tipo, s.titulo, s.descricao, s.local_atendimento,
+           s.data_inicio, s.data_fim, s.quantidade, s.valor_diaria, s.observacoes,
+           s.status, s.confirmada_cliente, s.data_confirmacao_cliente,
+           s.cliente_visualizou_em, s.prestador_visualizou_em,
+           s.data_criacao, s.data_atualizacao,
+           EXISTS(SELECT 1 FROM avaliacoes_solicitacoes av WHERE av.id_solicitacao = s.id_solicitacao) AS possui_avaliacao,
+           uc.nome AS nome_contratante, up.nome AS nome_prestador,
+           e.nome_equipamento AS nome_equipamento_atual,
+           DATE_FORMAT(s.data_inicio, '%Y-%m-%d') AS data_inicio_iso,
+           DATE_FORMAT(s.data_fim, '%Y-%m-%d') AS data_fim_iso
+    FROM solicitacoes s
+    INNER JOIN usuarios uc ON uc.id_usuario = s.id_cliente
+    INNER JOIN prestadores p ON p.id_prestador = s.id_prestador
+    INNER JOIN usuarios up ON up.id_usuario = p.id_usuario
+    LEFT JOIN equipamentos e ON e.id_equipamento = s.id_equipamento
+`;
+
+app.get('/solicitacoes/minhas', autenticar, async (req, res) => {
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    try {
+        if (String(await tipoContaUsuario(idUsuario) || '').toUpperCase() !== 'CLIENTE') {
+            return res.status(403).json({ sucesso: false, mensagem: 'Esta área é exclusiva para contratantes.' });
+        }
+        await consultar(
+            `UPDATE solicitacoes SET cliente_visualizou_em = CURRENT_TIMESTAMP,
+                    data_atualizacao = data_atualizacao WHERE id_cliente = ?`,
+            [idUsuario]
+        );
+        const solicitacoes = await consultar(
+            `${SQL_LISTA_SOLICITACOES} WHERE s.id_cliente = ? ORDER BY s.data_criacao DESC, s.id_solicitacao DESC`,
+            [idUsuario]
+        );
+        return res.json({ sucesso: true, solicitacoes });
+    } catch (erro) {
+        console.error('ERRO AO LISTAR PEDIDOS:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar seus pedidos.' });
+    }
+});
+
+app.get('/solicitacoes/recebidas', autenticar, async (req, res) => {
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    try {
+        if (String(await tipoContaUsuario(idUsuario) || '').toUpperCase() !== 'PRESTADOR') {
+            return res.status(403).json({ sucesso: false, mensagem: 'Esta área é exclusiva para prestadores.' });
+        }
+        await consultar(
+            `UPDATE solicitacoes SET prestador_visualizou_em = CURRENT_TIMESTAMP,
+                    data_atualizacao = data_atualizacao
+             WHERE id_prestador IN (SELECT id_prestador FROM prestadores WHERE id_usuario = ?)`,
+            [idUsuario]
+        );
+        const solicitacoes = await consultar(
+            `${SQL_LISTA_SOLICITACOES} WHERE p.id_usuario = ? ORDER BY s.data_criacao DESC, s.id_solicitacao DESC`,
+            [idUsuario]
+        );
+        return res.json({ sucesso: true, solicitacoes });
+    } catch (erro) {
+        console.error('ERRO AO LISTAR SOLICITAÇÕES RECEBIDAS:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar as solicitações recebidas.' });
+    }
+});
+
+app.get('/solicitacoes/:id', autenticar, async (req, res) => {
+    const idSolicitacao = Number(req.params.id);
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    if (!Number.isInteger(idSolicitacao) || idSolicitacao <= 0) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Solicitação inválida.' });
+    }
+    try {
+        const solicitacoes = await consultar(
+            `${SQL_LISTA_SOLICITACOES}
+             WHERE s.id_solicitacao = ? AND
+                   (s.id_cliente = ? OR p.id_usuario = ?)
+             LIMIT 1`,
+            [idSolicitacao, idUsuario, idUsuario]
+        );
+        if (!solicitacoes[0]) return res.status(404).json({ sucesso: false, mensagem: 'Solicitação não encontrada.' });
+        return res.json({ sucesso: true, solicitacao: solicitacoes[0] });
+    } catch (erro) {
+        console.error('ERRO AO CONSULTAR SOLICITAÇÃO:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível consultar a solicitação.' });
+    }
+});
+
+app.patch('/solicitacoes/:id/status', autenticar, async (req, res) => {
+    const idSolicitacao = Number(req.params.id);
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    const novoStatus = String((req.body || {}).status || '').trim().toUpperCase();
+    if (!Number.isInteger(idSolicitacao) || idSolicitacao <= 0 ||
+        !['ACEITA', 'RECUSADA', 'EM_ANDAMENTO', 'AGUARDANDO_CONFIRMACAO_CLIENTE', 'CONCLUIDA', 'CANCELADA'].includes(novoStatus)) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Ação ou solicitação inválida.' });
+    }
+
+    let conexao;
+    let transacaoAtiva = false;
+    try {
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction();
+        transacaoAtiva = true;
+        const solicitacoesIniciais = await consultarNaConexao(
+            conexao,
+            'SELECT tipo, id_equipamento FROM solicitacoes WHERE id_solicitacao = ? LIMIT 1',
+            [idSolicitacao]
+        );
+        if (!solicitacoesIniciais[0]) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return res.status(404).json({ sucesso: false, mensagem: 'Solicitação não encontrada.' });
+        }
+        let equipamentoBloqueado = null;
+        if (novoStatus === 'ACEITA' && solicitacoesIniciais[0].tipo === 'EQUIPAMENTO') {
+            const equipamentos = await consultarNaConexao(
+                conexao,
+                'SELECT quantidade, disponivel FROM equipamentos WHERE id_equipamento = ? FOR UPDATE',
+                [solicitacoesIniciais[0].id_equipamento]
+            );
+            equipamentoBloqueado = equipamentos[0] || null;
+        }
+        const solicitacoes = await consultarNaConexao(
+            conexao,
+            `SELECT s.*, p.id_usuario AS id_usuario_prestador
+             FROM solicitacoes s INNER JOIN prestadores p ON p.id_prestador = s.id_prestador
+             WHERE s.id_solicitacao = ? FOR UPDATE`,
+            [idSolicitacao]
+        );
+        const solicitacao = solicitacoes[0];
+        if (!solicitacao) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return res.status(404).json({ sucesso: false, mensagem: 'Solicitação não encontrada.' });
+        }
+
+        const ePrestador = Number(solicitacao.id_usuario_prestador) === idUsuario;
+        const eContratante = Number(solicitacao.id_cliente) === idUsuario;
+        const transicoesValidas =
+            (ePrestador && solicitacao.status === 'AGUARDANDO_RESPOSTA' && ['ACEITA', 'RECUSADA'].includes(novoStatus)) ||
+            (ePrestador && solicitacao.status === 'ACEITA' && novoStatus === 'EM_ANDAMENTO') ||
+            (ePrestador && solicitacao.status === 'EM_ANDAMENTO' && novoStatus === 'AGUARDANDO_CONFIRMACAO_CLIENTE') ||
+            (eContratante && solicitacao.status === 'AGUARDANDO_CONFIRMACAO_CLIENTE' && novoStatus === 'CONCLUIDA') ||
+            (eContratante && ['AGUARDANDO_RESPOSTA', 'ACEITA'].includes(solicitacao.status) && novoStatus === 'CANCELADA');
+        if (!transicoesValidas) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return res.status(403).json({ sucesso: false, mensagem: 'Você não pode realizar essa alteração para o status atual.' });
+        }
+
+        if (novoStatus === 'ACEITA' && solicitacao.tipo === 'EQUIPAMENTO') {
+            if (!equipamentoBloqueado || Number(equipamentoBloqueado.disponivel) !== 1) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(409).json({ sucesso: false, mensagem: 'O equipamento foi removido ou está marcado como indisponível.' });
+            }
+            const reservas = await consultarNaConexao(
+                conexao,
+                `SELECT quantidade
+                 FROM solicitacoes
+                 WHERE id_equipamento = ? AND id_solicitacao <> ?
+                   AND status IN ('ACEITA', 'EM_ANDAMENTO')
+                   AND data_inicio <= ? AND data_fim >= ?
+                 ORDER BY id_solicitacao FOR UPDATE`,
+                [solicitacao.id_equipamento, idSolicitacao, solicitacao.data_fim, solicitacao.data_inicio]
+            );
+            const quantidadeReservada = reservas.reduce((total, reserva) => total + Number(reserva.quantidade || 0), 0);
+            if (quantidadeReservada + Number(solicitacao.quantidade) > Number(equipamentoBloqueado.quantidade || 0)) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(409).json({ sucesso: false, mensagem: 'A quantidade disponível já está comprometida em parte desse período.' });
+            }
+        }
+
+        await consultarNaConexao(
+            conexao,
+            `UPDATE solicitacoes
+             SET status = ?,
+                 confirmada_cliente = CASE WHEN ? = 'CONCLUIDA' THEN 1 ELSE confirmada_cliente END,
+                 data_confirmacao_cliente = CASE WHEN ? = 'CONCLUIDA' THEN CURRENT_TIMESTAMP ELSE data_confirmacao_cliente END,
+                 cliente_visualizou_em = CASE WHEN ? = 1 THEN NULL ELSE CURRENT_TIMESTAMP END,
+                 prestador_visualizou_em = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END
+             WHERE id_solicitacao = ?`,
+            [novoStatus, novoStatus, novoStatus, ePrestador ? 1 : 0, ePrestador ? 1 : 0, idSolicitacao]
+        );
+        await conexao.commit();
+        transacaoAtiva = false;
+        return res.json({ sucesso: true, status: novoStatus });
+    } catch (erro) {
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        console.error('ERRO AO ATUALIZAR SOLICITAÇÃO:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível atualizar a solicitação.' });
+    } finally {
+        if (conexao) conexao.release();
+    }
+});
+
+app.post('/solicitacoes/:id/avaliacao', autenticar, async (req, res) => {
+    const idSolicitacao = Number(req.params.id);
+    const idCliente = req.usuarioAutenticado.id_usuario;
+    const corpo = req.body || {};
+    const alvo = String(corpo.alvo || '').trim().toUpperCase();
+    const notaRecebida = Number(corpo.nota);
+    const comentario = String(corpo.comentario || '').trim();
+    if (!Number.isInteger(idSolicitacao) || idSolicitacao <= 0 ||
+        !['PRESTADOR', 'EQUIPAMENTO'].includes(alvo) ||
+        !Number.isInteger(notaRecebida) || notaRecebida < 0 || notaRecebida > 5 ||
+        comentario.length > 2000) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Escolha uma nota de 0 a 5 e escreva um comentário de até 2000 caracteres.' });
+    }
+
+    let conexao;
+    let transacaoAtiva = false;
+    try {
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction();
+        transacaoAtiva = true;
+        const pedidos = await consultarNaConexao(
+            conexao,
+            `SELECT id_solicitacao, id_cliente, id_prestador, id_equipamento, tipo, status, confirmada_cliente
+             FROM solicitacoes WHERE id_solicitacao = ? FOR UPDATE`,
+            [idSolicitacao]
+        );
+        const pedido = pedidos[0];
+        if (!pedido || Number(pedido.id_cliente) !== idCliente) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return res.status(404).json({ sucesso: false, mensagem: 'Pedido não encontrado.' });
+        }
+        if (pedido.status !== 'CONCLUIDA' || Number(pedido.confirmada_cliente) !== 1) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return res.status(409).json({ sucesso: false, mensagem: 'A avaliação só fica disponível depois que você confirmar a conclusão.' });
+        }
+        if ((pedido.tipo === 'SERVICO' && alvo !== 'PRESTADOR') ||
+            (pedido.tipo === 'EQUIPAMENTO' && alvo === 'EQUIPAMENTO' && !pedido.id_equipamento)) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return res.status(400).json({ sucesso: false, mensagem: 'Esse pedido não permite avaliar o item selecionado.' });
+        }
+
+        const sequencia = await consultarNaConexao(conexao, 'INSERT INTO avaliacoes_solicitacoes_id_seq () VALUES ()');
+        await consultarNaConexao(
+            conexao,
+            `INSERT INTO avaliacoes_solicitacoes
+                (id_avaliacao, id_solicitacao, id_cliente, id_prestador, id_equipamento, alvo, nota, comentario)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [sequencia.insertId, idSolicitacao, idCliente, pedido.id_prestador,
+                alvo === 'EQUIPAMENTO' ? pedido.id_equipamento : null,
+                alvo, notaRecebida === 0 ? null : notaRecebida, comentario || null]
+        );
+        await conexao.commit();
+        transacaoAtiva = false;
+        return res.status(201).json({ sucesso: true, id_avaliacao: sequencia.insertId });
+    } catch (erro) {
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        if (erro.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ sucesso: false, mensagem: 'Você já avaliou este perfil ou equipamento para esse pedido.' });
+        }
+        console.error('ERRO AO SALVAR AVALIAÇÃO:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível salvar a avaliação.' });
+    } finally {
+        if (conexao) conexao.release();
+    }
+});
+
+app.get('/prestadores/:id/avaliacoes', async (req, res) => {
+    const idPrestador = Number(req.params.id);
+    if (!Number.isInteger(idPrestador) || idPrestador <= 0) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Profissional inválido.' });
+    }
+    try {
+        const avaliacoes = await consultar(
+            `SELECT a.id_avaliacao, a.alvo, a.nota, a.comentario, a.data_criacao,
+                    u.nome AS nome_cliente, e.nome_equipamento
+             FROM avaliacoes_solicitacoes a
+             INNER JOIN usuarios u ON u.id_usuario = a.id_cliente
+             LEFT JOIN equipamentos e ON e.id_equipamento = a.id_equipamento
+             WHERE a.id_prestador = ?
+             ORDER BY a.data_criacao DESC, a.id_avaliacao DESC LIMIT 50`,
+            [idPrestador]
+        );
+        const [resumo] = await consultar(
+            `SELECT COUNT(*) AS quantidade_comentarios, COUNT(CASE WHEN alvo = 'PRESTADOR' THEN nota END) AS quantidade_notas,
+                    AVG(CASE WHEN alvo = 'PRESTADOR' THEN nota END) AS media
+             FROM avaliacoes_solicitacoes WHERE id_prestador = ?`,
+            [idPrestador]
+        );
+        return res.json({ sucesso: true, avaliacoes, resumo });
+    } catch (erro) {
+        console.error('ERRO AO LISTAR AVALIAÇÕES DO PROFISSIONAL:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar as avaliações.' });
+    }
+});
+
+app.get('/equipamentos/:id/avaliacoes', async (req, res) => {
+    const idEquipamento = Number(req.params.id);
+    if (!Number.isInteger(idEquipamento) || idEquipamento <= 0) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Equipamento inválido.' });
+    }
+    try {
+        const avaliacoes = await consultar(
+            `SELECT a.id_avaliacao, a.nota, a.comentario, a.data_criacao, u.nome AS nome_cliente
+             FROM avaliacoes_solicitacoes a INNER JOIN usuarios u ON u.id_usuario = a.id_cliente
+             WHERE a.id_equipamento = ? AND a.alvo = 'EQUIPAMENTO'
+             ORDER BY a.data_criacao DESC, a.id_avaliacao DESC LIMIT 50`,
+            [idEquipamento]
+        );
+        const [resumo] = await consultar(
+            `SELECT COUNT(*) AS quantidade_comentarios, COUNT(nota) AS quantidade_notas, AVG(nota) AS media
+             FROM avaliacoes_solicitacoes WHERE id_equipamento = ? AND alvo = 'EQUIPAMENTO'`,
+            [idEquipamento]
+        );
+        return res.json({ sucesso: true, avaliacoes, resumo });
+    } catch (erro) {
+        console.error('ERRO AO LISTAR AVALIAÇÕES DO EQUIPAMENTO:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar as avaliações do equipamento.' });
+    }
+});
+
+app.get('/notificacoes/resumo', autenticar, async (req, res) => {
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    try {
+        const tipo = String(await tipoContaUsuario(idUsuario) || '').toUpperCase();
+        const [mensagens] = await consultar(
+            `SELECT COUNT(*) AS total
+             FROM mensagens m
+             INNER JOIN conversas c ON c.id_conversa = m.id_conversa
+             INNER JOIN prestadores p ON p.id_prestador = c.id_prestador
+             WHERE m.id_remetente <> ? AND m.lida = 0
+               AND (c.id_cliente = ? OR p.id_usuario = ?)`,
+            [idUsuario, idUsuario, idUsuario]
+        );
+        let acoes = 0;
+        if (tipo === 'PRESTADOR') {
+            const [resultado] = await consultar(
+                `SELECT COUNT(*) AS total FROM solicitacoes s
+                 INNER JOIN prestadores p ON p.id_prestador = s.id_prestador
+                 WHERE p.id_usuario = ? AND s.prestador_visualizou_em IS NULL`,
+                [idUsuario]
+            );
+            acoes = Number(resultado.total) || 0;
+        } else if (tipo === 'CLIENTE') {
+            const [resultado] = await consultar(
+                `SELECT COUNT(*) AS total FROM solicitacoes s
+                 WHERE s.id_cliente = ? AND (
+                    s.cliente_visualizou_em IS NULL OR
+                    (s.status = 'CONCLUIDA' AND s.confirmada_cliente = 1 AND NOT EXISTS (
+                        SELECT 1 FROM avaliacoes_solicitacoes a WHERE a.id_solicitacao = s.id_solicitacao
+                    ))
+                 )`,
+                [idUsuario]
+            );
+            acoes = Number(resultado.total) || 0;
+        }
+        return res.json({ sucesso: true, mensagens_nao_lidas: Number(mensagens.total) || 0, acoes_pendentes: acoes });
+    } catch (erro) {
+        console.error('ERRO AO CONTAR NOTIFICAÇÕES:', erro);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar as notificações.' });
     }
 });
 

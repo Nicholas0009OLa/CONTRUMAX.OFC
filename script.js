@@ -56,6 +56,9 @@ function selectTipo(btn){
   let buscandoNovasMensagensChat = false;
   let intervaloConversasChat = null;
   let intervaloMensagensChat = null;
+  let solicitacaoPendenteLogin = null;
+  let solicitacaoAtual = null;
+  let intervaloNotificacoes = null;
 
   function tokenChat() {
     return obterUsuarioPainel()?.auth_token || "";
@@ -101,6 +104,7 @@ function selectTipo(btn){
     closeConversation();
     document.getElementById('chat-conv-list').innerHTML = '<div class="chat-loading">Carregando conversas...</div>';
     carregarConversasChat();
+    atualizarNotificacoes();
     clearInterval(intervaloConversasChat);
     intervaloConversasChat = setInterval(carregarConversasChat, 15000);
   }
@@ -467,6 +471,7 @@ async function cadastrarUsuario() {
 
             closeModal();
             verificarLogin();
+            retomarSolicitacaoPendente();
 
         }
 
@@ -519,6 +524,7 @@ async function loginUsuario() {
         prestadorPendenteParaChat = null;
         iniciarConversa(idPrestadorPendente);
     }
+    retomarSolicitacaoPendente();
 
 } else {
 
@@ -663,6 +669,8 @@ function verificarLogin() {
 
     if (usuario) {
 
+        atualizarRotulosPedidos();
+
         document.getElementById("btnCadastro").style.display = "none";
 
         document.getElementById("btnLogin").innerHTML =
@@ -670,7 +678,58 @@ function verificarLogin() {
 
         document.getElementById("btnLogin").onclick =
             mostrarMenuUsuario;
+        iniciarPollingNotificacoes();
+    } else {
+        iniciarPollingNotificacoes();
     }
+}
+
+function atualizarRotulosPedidos() {
+    const usuario = obterUsuarioPainel();
+    const texto = String(usuario?.tipo_usuario || usuario?.tipo || '').toUpperCase() === 'PRESTADOR'
+        ? '📩 Solicitações recebidas' : '📦 Meus pedidos';
+    const menu = document.getElementById('navPedidosDropdown');
+    const painel = document.getElementById('nav-pedidos');
+    if (menu) menu.innerHTML = `${texto}<span id="badgePedidosDropdown" class="badge-notificacao badge-notificacao-inline" hidden></span>`;
+    if (painel) painel.innerHTML = `${texto}<span id="badgePedidosPainel" class="badge-notificacao" hidden></span>`;
+}
+
+function atualizarBadgeNotificacao(id, quantidade) {
+    const badge = document.getElementById(id);
+    if (!badge) return;
+    const total = Math.max(0, Number(quantidade) || 0);
+    badge.hidden = total === 0;
+    badge.textContent = total > 99 ? '99+' : String(total);
+}
+
+async function atualizarNotificacoes() {
+    if (!tokenChat()) {
+        atualizarBadgeNotificacao('badgeChatNotificacoes', 0);
+        atualizarBadgeNotificacao('badgePedidosDropdown', 0);
+        atualizarBadgeNotificacao('badgePedidosPainel', 0);
+        return;
+    }
+    try {
+        const resumo = await requisicaoChat('/notificacoes/resumo');
+        atualizarBadgeNotificacao('badgeChatNotificacoes', resumo.mensagens_nao_lidas);
+        atualizarBadgeNotificacao('badgePedidosDropdown', resumo.acoes_pendentes);
+        atualizarBadgeNotificacao('badgePedidosPainel', resumo.acoes_pendentes);
+    } catch (erro) {
+        console.debug('Notificações indisponíveis no momento.');
+    }
+}
+
+function iniciarPollingNotificacoes() {
+    clearInterval(intervaloNotificacoes);
+    if (!tokenChat()) {
+        atualizarBadgeNotificacao('badgeChatNotificacoes', 0);
+        atualizarBadgeNotificacao('badgePedidosDropdown', 0);
+        atualizarBadgeNotificacao('badgePedidosPainel', 0);
+        intervaloNotificacoes = null;
+        return;
+    }
+    atualizarNotificacoes();
+    intervaloNotificacoes = setInterval(atualizarNotificacoes, 20000);
 }
 
 function mostrarMenuUsuario() {
@@ -729,6 +788,9 @@ function abrirPainelUsuario(secao) {
     }
 
     document.getElementById("painelUsuarioOverlay").classList.add("ativo");
+
+    atualizarRotulosPedidos();
+    atualizarNotificacoes();
 
     const dropdown = document.getElementById("dropdownUsuario");
 
@@ -808,14 +870,15 @@ function mostrarSecaoPainel(secao) {
 
     // MEUS PEDIDOS
     else if (secao === "pedidos") {
+        const prestador = String(usuario.tipo_usuario || usuario.tipo || '').toUpperCase() === 'PRESTADOR';
         conteudo.innerHTML = `
-            <h2 class="titulo-secao-painel">Meus pedidos</h2>
+            <h2 class="titulo-secao-painel">${prestador ? 'Solicitações recebidas' : 'Meus pedidos'}</h2>
 
             <p class="descricao-secao-painel">
-                Acompanhe os pedidos realizados na CONSTRUMAX.
+                ${prestador ? 'Analise e acompanhe os pedidos enviados pelos contratantes.' : 'Acompanhe os pedidos realizados na CONSTRUMAX.'}
             </p>
 
-            <div class="mensagem-painel-vazio">
+            <div id="listaSolicitacoesPainel" class="lista-solicitacoes-painel mensagem-painel-vazio">
                 <div>📦</div>
 
                 <h3>Seus pedidos aparecerão aqui</h3>
@@ -826,7 +889,147 @@ function mostrarSecaoPainel(secao) {
                 </p>
             </div>
         `;
+        carregarSolicitacoesPainel(prestador);
     }
+}
+
+const rotulosStatusSolicitacao = {
+    AGUARDANDO_RESPOSTA: 'Aguardando resposta', ACEITA: 'Aceita', RECUSADA: 'Recusada',
+    EM_ANDAMENTO: 'Em andamento', AGUARDANDO_CONFIRMACAO_CLIENTE: 'Aguardando sua confirmação',
+    CONCLUIDA: 'Concluída', CANCELADA: 'Cancelada'
+};
+
+function formatarDataPainel(valor) {
+    if (!valor) return 'Não informada';
+    const texto = String(valor);
+    const data = /^\d{4}-\d{2}-\d{2}$/.test(texto) ? new Date(`${texto}T12:00:00`) : new Date(valor);
+    return Number.isNaN(data.getTime()) ? 'Não informada' : data.toLocaleDateString('pt-BR');
+}
+
+async function carregarSolicitacoesPainel(eAreaPrestador) {
+    const lista = document.getElementById('listaSolicitacoesPainel');
+    const usuario = obterUsuarioPainel();
+    if (!lista || !usuario) return;
+    try {
+        const resultado = await requisicaoChat(eAreaPrestador ? '/solicitacoes/recebidas' : '/solicitacoes/minhas');
+        const solicitacoes = resultado.solicitacoes || [];
+        if (!solicitacoes.length) {
+            lista.innerHTML = `<div><h3>${eAreaPrestador ? 'Nenhuma solicitação recebida' : 'Você ainda não enviou pedidos'}</h3><p>${eAreaPrestador ? 'Quando um contratante enviar um pedido, ele aparecerá aqui.' : 'Quando você solicitar um serviço ou equipamento, poderá acompanhar o andamento por aqui.'}</p></div>`;
+            return;
+        }
+        lista.classList.remove('mensagem-painel-vazio');
+        lista.innerHTML = solicitacoes.map(solicitacao => {
+            const id = Number(solicitacao.id_solicitacao);
+            const tipo = solicitacao.tipo === 'EQUIPAMENTO' ? 'Aluguel de equipamento' : 'Serviço profissional';
+            const pessoa = eAreaPrestador ? solicitacao.nome_contratante : solicitacao.nome_prestador;
+            const status = rotulosStatusSolicitacao[solicitacao.status] || solicitacao.status;
+            const inicio = formatarDataPainel(solicitacao.data_inicio_iso || solicitacao.data_inicio);
+            const periodo = solicitacao.tipo === 'EQUIPAMENTO'
+                ? `${inicio} até ${formatarDataPainel(solicitacao.data_fim_iso || solicitacao.data_fim)}` : inicio;
+            const aluguel = solicitacao.tipo === 'EQUIPAMENTO'
+                ? `<p><strong>Quantidade:</strong> ${Number(solicitacao.quantidade)}${solicitacao.valor_diaria !== null ? ` · <strong>Diária:</strong> ${Number(solicitacao.valor_diaria).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}</p>` : '';
+            let acoes = Number(solicitacao.id_conversa) > 0
+                ? `<button type="button" class="acao-anuncio-secundaria" onclick="abrirChatSolicitacao(${Number(solicitacao.id_conversa)})">Conversar</button>` : '';
+            if (eAreaPrestador && solicitacao.status === 'AGUARDANDO_RESPOSTA') {
+                acoes += `<button type="button" class="acao-anuncio-principal" onclick="alterarStatusSolicitacao(${id}, 'ACEITA')">Aceitar</button><button type="button" class="acao-anuncio-secundaria" onclick="alterarStatusSolicitacao(${id}, 'RECUSADA')">Recusar</button>`;
+            }
+            if (eAreaPrestador && solicitacao.status === 'ACEITA') acoes += `<button type="button" class="acao-anuncio-principal" onclick="alterarStatusSolicitacao(${id}, 'EM_ANDAMENTO')">Marcar como em andamento</button>`;
+            if (eAreaPrestador && solicitacao.status === 'EM_ANDAMENTO') acoes += `<button type="button" class="acao-anuncio-principal" onclick="alterarStatusSolicitacao(${id}, 'AGUARDANDO_CONFIRMACAO_CLIENTE')">Solicitar confirmação de conclusão</button>`;
+            if (!eAreaPrestador && solicitacao.status === 'AGUARDANDO_CONFIRMACAO_CLIENTE') acoes += `<button type="button" class="acao-anuncio-principal" onclick="alterarStatusSolicitacao(${id}, 'CONCLUIDA')">Confirmar conclusão</button>`;
+            if (!eAreaPrestador && ['AGUARDANDO_RESPOSTA', 'ACEITA'].includes(solicitacao.status)) acoes += `<button type="button" class="acao-anuncio-excluir" onclick="alterarStatusSolicitacao(${id}, 'CANCELADA')">Cancelar pedido</button>`;
+            if (!eAreaPrestador && solicitacao.status === 'CONCLUIDA' && Number(solicitacao.confirmada_cliente) === 1) {
+                acoes += Number(solicitacao.possui_avaliacao)
+                    ? '<span class="avaliacao-enviada">Avaliação enviada</span>'
+                    : `<button type="button" class="acao-anuncio-principal" onclick="mostrarFormularioAvaliacao(${id}, '${solicitacao.tipo}')">Avaliar</button>`;
+            }
+            return `<article class="solicitacao-painel-card">
+                <header><div><span class="solicitacao-tipo">${escaparTextoPainel(tipo)}</span><h3>${escaparTextoPainel(solicitacao.titulo)}</h3></div><span class="solicitacao-status status-${escaparTextoPainel(solicitacao.status).toLowerCase()}">${escaparTextoPainel(status)}</span></header>
+                <div class="solicitacao-resumo">
+                    <p><strong>${eAreaPrestador ? 'Contratante' : 'Prestador'}:</strong> ${escaparTextoPainel(pessoa)}${eAreaPrestador ? ` · Conta #${Number(solicitacao.id_cliente)}` : ''}</p>
+                    <p><strong>Pedido enviado:</strong> ${formatarDataPainel(solicitacao.data_criacao)}</p>
+                    <p><strong>${solicitacao.tipo === 'EQUIPAMENTO' ? 'Período desejado' : 'Data prevista'}:</strong> ${periodo}</p>
+                    <p><strong>Local:</strong> ${escaparTextoPainel(solicitacao.local_atendimento)}</p>${aluguel}
+                    <p><strong>Descrição:</strong><br>${escaparTextoPainel(solicitacao.descricao)}</p>
+                    ${solicitacao.observacoes ? `<p><strong>Observações:</strong><br>${escaparTextoPainel(solicitacao.observacoes)}</p>` : ''}
+                </div>${acoes ? `<footer class="solicitacao-acoes">${acoes}</footer>` : ''}
+                ${!eAreaPrestador && solicitacao.status === 'CONCLUIDA' && !Number(solicitacao.possui_avaliacao) ? `<div id="formAvaliacaoSolicitacao-${id}"></div>` : ''}
+            </article>`;
+        }).join('');
+    } catch (erro) {
+        lista.innerHTML = `<div><h3>Não foi possível carregar as solicitações</h3><p>${escaparTextoPainel(erro.message)}</p></div>`;
+    }
+}
+
+async function alterarStatusSolicitacao(id, status) {
+    const confirmacoes = {
+        CANCELADA: 'Cancelar este pedido?',
+        AGUARDANDO_CONFIRMACAO_CLIENTE: 'Pedir ao contratante que confirme a conclusão?',
+        CONCLUIDA: 'Confirmar que o serviço ou aluguel foi concluído?'
+    };
+    const mensagem = confirmacoes[status] || `${rotulosStatusSolicitacao[status] || 'Atualizar'} esta solicitação?`;
+    if (!confirm(mensagem)) return;
+    const usuario = obterUsuarioPainel();
+    const prestador = String(usuario?.tipo_usuario || usuario?.tipo || '').toUpperCase() === 'PRESTADOR';
+    try {
+        await requisicaoChat(`/solicitacoes/${Number(id)}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+        await carregarSolicitacoesPainel(prestador);
+        atualizarNotificacoes();
+    } catch (erro) { alert(erro.message); }
+}
+
+function mostrarFormularioAvaliacao(id, tipo) {
+    const local = document.getElementById(`formAvaliacaoSolicitacao-${Number(id)}`);
+    if (!local) return;
+    const seletorAlvo = tipo === 'EQUIPAMENTO'
+        ? '<label>Avaliar<select name="alvo"><option value="EQUIPAMENTO">Este equipamento</option><option value="PRESTADOR">O prestador</option></select></label>'
+        : '<input type="hidden" name="alvo" value="PRESTADOR"><p class="avaliacao-alvo">Avaliação do prestador</p>';
+    local.innerHTML = `<form class="form-avaliacao" onsubmit="enviarAvaliacaoSolicitacao(event, ${Number(id)})">
+        <h4>Como foi sua experiência?</h4>${seletorAlvo}
+        <input type="hidden" name="nota" value="0">
+        <div class="seletor-estrelas" role="group" aria-label="Nota de zero a cinco estrelas">
+            <button type="button" class="nota-estrela nota-zero selecionada" onclick="selecionarNotaAvaliacao(${Number(id)}, 0)" aria-pressed="true">0 · Sem estrelas</button>
+            ${[1, 2, 3, 4, 5].map(nota => `<button type="button" class="nota-estrela" onclick="selecionarNotaAvaliacao(${Number(id)}, ${nota})" aria-label="${nota} ${nota === 1 ? 'estrela' : 'estrelas'}" aria-pressed="false">${'★'.repeat(nota)}</button>`).join('')}
+        </div>
+        <label>Comentário <span>(opcional)</span><textarea name="comentario" maxlength="2000" rows="3" placeholder="Conte como foi o serviço ou o equipamento"></textarea></label>
+        <div class="form-solicitacao-acoes"><button type="button" class="acao-anuncio-secundaria" onclick="document.getElementById('formAvaliacaoSolicitacao-${Number(id)}').innerHTML=''">Cancelar</button><button type="submit" class="acao-anuncio-principal">Enviar avaliação</button></div>
+    </form>`;
+}
+
+function selecionarNotaAvaliacao(id, nota) {
+    const local = document.getElementById(`formAvaliacaoSolicitacao-${Number(id)}`);
+    if (!local) return;
+    local.querySelector('[name="nota"]').value = String(nota);
+    local.querySelectorAll('.nota-estrela').forEach(botao => {
+        const valor = botao.classList.contains('nota-zero') ? 0 : (botao.getAttribute('aria-label') || '').match(/^\d/)?.[0] * 1;
+        botao.classList.toggle('selecionada', valor === nota);
+        botao.setAttribute('aria-pressed', valor === nota ? 'true' : 'false');
+    });
+}
+
+async function enviarAvaliacaoSolicitacao(event, id) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const nota = Number(form.elements.nota.value);
+    const comentario = String(form.elements.comentario.value || '').trim();
+    const botao = form.querySelector('button[type="submit"]');
+    botao.disabled = true;
+    try {
+        await requisicaoChat(`/solicitacoes/${Number(id)}/avaliacao`, {
+            method: 'POST',
+            body: JSON.stringify({ alvo: form.elements.alvo.value, nota, comentario })
+        });
+        await carregarSolicitacoesPainel(false);
+        atualizarNotificacoes();
+    } catch (erro) {
+        alert(erro.message);
+        botao.disabled = false;
+    }
+}
+
+async function abrirChatSolicitacao(idConversa) {
+    openChat();
+    await carregarConversasChat();
+    openConversation(Number(idConversa));
 }
 
 // Atalhos do menu superior
@@ -1194,6 +1397,9 @@ function abrirPerfilPrestador(id) {
     const contato = podeIniciarConversa
         ? `<button class="perfil-botao-contato" type="button" onclick="iniciarConversa(${Number(id)})">💬 Entrar em contato</button>`
         : '<button class="perfil-botao-contato" type="button" disabled>Contato disponível para contratantes</button>';
+    const solicitar = podeIniciarConversa
+        ? `<button class="perfil-botao-contato perfil-botao-solicitar" type="button" onclick="solicitarOrcamento(${Number(id)})">📋 Solicitar orçamento</button>`
+        : '';
     const avatar = fotos.length
         ? `<img class="perfil-foto-principal" id="perfilFotoPrincipal" src="${API_BASE_URL}${escaparHTML(fotos[0])}" alt="Trabalho de ${nome}">`
         : `<div class="perfil-avatar-grande">${escaparHTML(String(prestador.nome || "P").split(" ").map(parte => parte[0]).slice(0, 2).join(""))}</div>`;
@@ -1226,13 +1432,57 @@ function abrirPerfilPrestador(id) {
             ${galeria}
             <div class="perfil-detalhes">
                 <section class="perfil-sobre"><h3>📝 Sobre mim</h3><p>${escaparHTML(prestador.descricao || "O profissional ainda não adicionou uma descrição.")}</p><h3>⚙ Serviços oferecidos</h3><div class="perfil-tags">${tags}</div><h3>📍 Localização</h3><p>${escaparHTML(prestador.cidade)}${prestador.estado ? `, ${escaparHTML(prestador.estado)}` : ""}</p></section>
-                <aside class="perfil-contato"><h3>⭐ Avaliações</h3><p>${notaHtml}</p>${contato}</aside>
+                <aside class="perfil-contato"><h3>⭐ Avaliações</h3><p id="resumoAvaliacoesPrestador-${Number(id)}">${notaHtml}</p><div id="avaliacoesPrestador-${Number(id)}" class="lista-avaliacoes"><span>Carregando comentários...</span></div>${solicitar}${contato}</aside>
             </div>
         </article>
     </div>`;
     modal.classList.add("ativo");
     modal.setAttribute("aria-hidden", "false");
     document.body.classList.add("perfil-aberto");
+    carregarAvaliacoesPrestador(Number(id));
+}
+
+function textoEstrelas(nota) {
+    const valor = Number(nota);
+    if (!Number.isFinite(valor) || valor <= 0) return 'Sem nota';
+    const cheias = Math.min(5, Math.max(0, Math.round(valor)));
+    return `${'★'.repeat(cheias)}${'☆'.repeat(5 - cheias)} ${valor.toFixed(1)}`;
+}
+
+function htmlCartaoAvaliacao(avaliacao, incluirAlvo = false) {
+    const alvo = avaliacao.alvo === 'EQUIPAMENTO'
+        ? `Equipamento: ${escaparHTML(avaliacao.nome_equipamento || 'anúncio removido')}` : 'Prestador';
+    const nota = Number(avaliacao.nota) > 0 ? `<span class="avaliacao-estrelas">${textoEstrelas(avaliacao.nota)}</span>` : '<span class="avaliacao-sem-nota">Sem estrelas</span>';
+    const comentario = avaliacao.comentario
+        ? `<p>${escaparHTML(avaliacao.comentario)}</p>` : '<p class="avaliacao-sem-comentario">Sem comentário.</p>';
+    return `<article class="avaliacao-card">${nota}${incluirAlvo ? `<span class="avaliacao-alvo-resumo">${alvo}</span>` : ''}${comentario}<small>${escaparHTML(avaliacao.nome_cliente || 'Contratante')} · ${formatarDataPainel(avaliacao.data_criacao)}</small></article>`;
+}
+
+async function carregarAvaliacoesPrestador(idPrestador) {
+    const lista = document.getElementById(`avaliacoesPrestador-${Number(idPrestador)}`);
+    if (!lista) return;
+    try {
+        const resposta = await fetch(`${API_BASE_URL}/prestadores/${Number(idPrestador)}/avaliacoes`);
+        const resultado = await resposta.json();
+        if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || 'Não foi possível carregar os comentários.');
+        const resumo = resultado.resumo || {};
+        const campoResumo = document.getElementById(`resumoAvaliacoesPrestador-${Number(idPrestador)}`);
+        if (campoResumo) {
+            const cadastro = todosPrestadores.find(item => Number(item.id_prestador) === Number(idPrestador));
+            const notaAntiga = Number(cadastro?.avaliacao);
+            const totalAntigo = Number(cadastro?.total_avaliacoes) || 0;
+            campoResumo.innerHTML = Number(resumo.quantidade_notas) > 0
+                ? `<strong>${textoEstrelas(resumo.media)}</strong> de 5 (${Number(resumo.quantidade_notas)} avaliações)`
+                : totalAntigo > 0 && Number.isFinite(notaAntiga)
+                    ? `<strong>${textoEstrelas(notaAntiga)}</strong> de 5 (${totalAntigo} avaliações)`
+                    : 'Este profissional ainda não recebeu avaliações com estrelas.';
+        }
+        lista.innerHTML = resultado.avaliacoes?.length
+            ? resultado.avaliacoes.map(avaliacao => htmlCartaoAvaliacao(avaliacao, true)).join('')
+            : '<span class="avaliacao-sem-comentario">Ainda não há comentários.</span>';
+    } catch (erro) {
+        lista.innerHTML = `<span class="avaliacao-sem-comentario">${escaparHTML(erro.message)}</span>`;
+    }
 }
 
 function selecionarFotoPerfilPrestador(id, indice) {
@@ -1251,8 +1501,167 @@ function fecharPerfilPrestador(event) {
     document.body.classList.remove("perfil-aberto");
 }
 
+function solicitarOrcamento(idPrestador) {
+    const usuario = obterUsuarioPainel();
+    if (!usuario?.auth_token) {
+        solicitacaoPendenteLogin = { tipo: 'SERVICO', id_prestador: Number(idPrestador) };
+        fecharPerfilPrestador();
+        alert('Entre na sua conta de contratante para solicitar um orçamento.');
+        openModal('login');
+        return;
+    }
+    if (String(usuario.tipo_usuario || usuario.tipo || '').toUpperCase() === 'PRESTADOR') {
+        alert('Somente contratantes podem enviar solicitações.');
+        return;
+    }
+    const prestador = todosPrestadores.find(item => Number(item.id_prestador) === Number(idPrestador));
+    if (!prestador) return;
+    abrirModalSolicitacaoServico(prestador);
+}
+
+function abrirSolicitacaoEquipamento(idEquipamento) {
+    const usuario = obterUsuarioPainel();
+    if (!usuario?.auth_token) {
+        solicitacaoPendenteLogin = { tipo: 'EQUIPAMENTO', id_equipamento: Number(idEquipamento) };
+        fecharDetalhesEquipamento();
+        alert('Entre na sua conta de contratante para solicitar um aluguel.');
+        openModal('login');
+        return;
+    }
+    if (String(usuario.tipo_usuario || usuario.tipo || '').toUpperCase() === 'PRESTADOR') {
+        alert('Somente contratantes podem enviar solicitações.');
+        return;
+    }
+    const equipamento = todosEquipamentos.find(item => Number(item.id_equipamento) === Number(idEquipamento));
+    if (!equipamento) return;
+    if (Number(equipamento.disponivel) !== 1 || Number(equipamento.quantidade) < 1) {
+        alert('Este equipamento está marcado como indisponível.');
+        return;
+    }
+    abrirModalSolicitacaoEquipamento(equipamento);
+}
+
+function retomarSolicitacaoPendente() {
+    if (!solicitacaoPendenteLogin || !obterUsuarioPainel()?.auth_token) return;
+    const usuario = obterUsuarioPainel();
+    const pendente = solicitacaoPendenteLogin;
+    solicitacaoPendenteLogin = null;
+    if (String(usuario.tipo_usuario || usuario.tipo || '').toUpperCase() === 'PRESTADOR') {
+        alert('A solicitação está disponível somente para contratantes.');
+        return;
+    }
+    if (pendente.tipo === 'SERVICO') solicitarOrcamento(pendente.id_prestador);
+    else abrirSolicitacaoEquipamento(pendente.id_equipamento);
+}
+
+function dataAtualParaFormulario() {
+    const partes = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date());
+    const valores = Object.fromEntries(partes.map(parte => [parte.type, parte.value]));
+    return `${valores.year}-${valores.month}-${valores.day}`;
+}
+
+function abrirModalSolicitacaoServico(prestador) {
+    fecharPerfilPrestador();
+    solicitacaoAtual = { tipo: 'SERVICO', id_prestador: Number(prestador.id_prestador) };
+    const nome = escaparHTML(prestador.nome || 'profissional');
+    const servico = escaparHTML(prestador.profissao || 'Serviço profissional');
+    const local = escaparHTML([prestador.cidade, prestador.estado].filter(Boolean).join(', '));
+    document.getElementById('solicitacaoConteudo').innerHTML = `
+        <span class="solicitacao-tipo">PEDIDO DE SERVIÇO</span>
+        <h2 id="solicitacaoTitulo">Solicitar orçamento</h2>
+        <p class="solicitacao-intro">Seu pedido será enviado para ${nome}. O serviço só será confirmado depois da resposta do profissional.</p>
+        <form class="form-solicitacao" onsubmit="enviarSolicitacao(event)">
+            <label>Serviço desejado<input name="titulo" maxlength="150" required value="${servico}"></label>
+            <label>Descreva o trabalho<textarea name="descricao" maxlength="4000" rows="4" required placeholder="Conte o que precisa ser feito, medidas ou detalhes importantes"></textarea></label>
+            <div class="form-solicitacao-linha"><label>Data prevista<input name="data_inicio" type="date" min="${dataAtualParaFormulario()}" required></label><label>Local do serviço<input name="local_atendimento" maxlength="255" required value="${local}" placeholder="Cidade ou endereço"></label></div>
+            <label>Informações adicionais <span>(opcional)</span><textarea name="observacoes" maxlength="2000" rows="2" placeholder="Horários, acesso ao local ou outros detalhes"></textarea></label>
+            <div class="form-solicitacao-acoes"><button type="button" class="acao-anuncio-secundaria" onclick="fecharSolicitacao()">Voltar</button><button type="submit" class="acao-anuncio-principal">Enviar pedido</button></div>
+        </form>`;
+    mostrarModalSolicitacao();
+}
+
+function abrirModalSolicitacaoEquipamento(equipamento) {
+    fecharDetalhesEquipamento();
+    solicitacaoAtual = { tipo: 'EQUIPAMENTO', id_equipamento: Number(equipamento.id_equipamento) };
+    const nome = escaparHTML(equipamento.nome_equipamento || 'Equipamento');
+    const maximo = Math.max(1, Number(equipamento.quantidade) || 1);
+    const local = escaparHTML([equipamento.cidade, equipamento.estado].filter(Boolean).join(', '));
+    document.getElementById('solicitacaoConteudo').innerHTML = `
+        <span class="solicitacao-tipo">PEDIDO DE ALUGUEL</span>
+        <h2 id="solicitacaoTitulo">Solicitar aluguel</h2>
+        <p class="solicitacao-intro">${nome} · ${maximo} unidade(s) anunciada(s). O pedido depende da confirmação do prestador.</p>
+        <form class="form-solicitacao" onsubmit="enviarSolicitacao(event)">
+            <label>Equipamento<input value="${nome}" readonly></label>
+            <div class="form-solicitacao-linha"><label>Início do aluguel<input name="data_inicio" type="date" min="${dataAtualParaFormulario()}" onchange="this.form.elements.data_fim.min=this.value" required></label><label>Devolução prevista<input name="data_fim" type="date" min="${dataAtualParaFormulario()}" required></label></div>
+            <div class="form-solicitacao-linha"><label>Quantidade<input name="quantidade" type="number" min="1" max="${maximo}" step="1" value="1" required></label><label>Local de utilização<input name="local_atendimento" maxlength="255" required value="${local}" placeholder="Cidade ou endereço"></label></div>
+            <label>Como pretende utilizar? <span>(opcional)</span><textarea name="descricao" maxlength="4000" rows="3" placeholder="Informe o tipo de trabalho ou condições do local"></textarea></label>
+            <label>Observações <span>(opcional)</span><textarea name="observacoes" maxlength="2000" rows="2" placeholder="Acesso, entrega ou outros detalhes"></textarea></label>
+            <div class="form-solicitacao-acoes"><button type="button" class="acao-anuncio-secundaria" onclick="fecharSolicitacao()">Voltar</button><button type="submit" class="acao-anuncio-principal">Enviar pedido</button></div>
+        </form>`;
+    mostrarModalSolicitacao();
+}
+
+function mostrarModalSolicitacao() {
+    if (!solicitacaoAtual.idempotencia) {
+        solicitacaoAtual.idempotencia = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+    const modal = document.getElementById('modalSolicitacao');
+    modal.classList.add('ativo');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+}
+
+function fecharSolicitacao() {
+    const modal = document.getElementById('modalSolicitacao');
+    if (!modal) return;
+    modal.classList.remove('ativo');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    solicitacaoAtual = null;
+}
+
+function fecharSolicitacaoFora(event) {
+    if (event.target === document.getElementById('modalSolicitacao')) fecharSolicitacao();
+}
+
+async function enviarSolicitacao(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const botao = form.querySelector('button[type="submit"]');
+    const campos = new FormData(form);
+    const corpo = {
+        ...solicitacaoAtual,
+        idempotencia: solicitacaoAtual?.idempotencia,
+        titulo: String(campos.get('titulo') || (solicitacaoAtual?.tipo === 'EQUIPAMENTO' ? document.querySelector('#solicitacaoConteudo input[readonly]')?.value || '' : '')).trim(),
+        descricao: String(campos.get('descricao') || (solicitacaoAtual?.tipo === 'EQUIPAMENTO' ? 'Pedido de aluguel do equipamento.' : '')).trim(),
+        local_atendimento: String(campos.get('local_atendimento') || '').trim(),
+        data_inicio: String(campos.get('data_inicio') || ''),
+        data_fim: String(campos.get('data_fim') || ''),
+        quantidade: Number(campos.get('quantidade') || 1),
+        observacoes: String(campos.get('observacoes') || '').trim()
+    };
+    if (!solicitacaoAtual) return;
+    botao.disabled = true;
+    try {
+        await requisicaoChat('/solicitacoes', { method: 'POST', body: JSON.stringify(corpo) });
+        fecharSolicitacao();
+        alert('Pedido enviado. Você poderá acompanhar a resposta em “Meus pedidos” e conversar com o prestador pelo chat.');
+        abrirPainelUsuario('pedidos');
+    } catch (erro) {
+        alert(erro.message);
+    } finally {
+        if (botao.isConnected) botao.disabled = false;
+    }
+}
+
 document.addEventListener("keydown", event => {
-    if (event.key === "Escape") fecharPerfilPrestador();
+    if (event.key === "Escape") {
+        fecharSolicitacao();
+        fecharDetalhesEquipamento();
+        fecharPerfilPrestador();
+    }
 });
 
 buscarPrestadores();
@@ -1297,7 +1706,7 @@ function renderizarEquipamentos(equipamentos) {
 
         lista.innerHTML += `
 
-        <div class="machine-card">
+        <div class="machine-card" onclick="abrirDetalhesEquipamento(${Number(equipamento.id_equipamento)}, event)">
 
             <div class="machine-gallery" id="${idCarrossel}">
 
@@ -1350,10 +1759,11 @@ function renderizarEquipamentos(equipamentos) {
                     <li>📍 ${equipamento.cidade} - ${equipamento.estado}</li>
                     <li>💰 R$ ${equipamento.valor_diaria}/dia</li>
                     <li>📦 Quantidade: ${equipamento.quantidade}</li>
+                    <li>${Number(equipamento.total_avaliacoes) > 0 && Number(equipamento.avaliacao) > 0 ? `⭐ ${Number(equipamento.avaliacao).toFixed(1)} (${Number(equipamento.total_avaliacoes)} avaliações)` : 'Ainda sem avaliações'}</li>
                 </ul>
 
-                <button class="btn-quote">
-                    Alugar
+                <button class="btn-quote" type="button" onclick="abrirDetalhesEquipamento(${Number(equipamento.id_equipamento)}, event)">
+                    Ver equipamento
                 </button>
 
             </div>
@@ -1364,6 +1774,84 @@ function renderizarEquipamentos(equipamentos) {
 
     });
 
+}
+
+function abrirDetalhesEquipamento(idEquipamento, event) {
+    if (event?.currentTarget !== event?.target && event?.target?.closest('button')) return;
+    const equipamento = todosEquipamentos.find(item => Number(item.id_equipamento) === Number(idEquipamento));
+    if (!equipamento) return;
+    const modal = document.getElementById('modalEquipamentoDetalhe');
+    const conteudo = document.getElementById('equipamentoDetalheConteudo');
+    const fotos = Array.isArray(equipamento.fotos) ? equipamento.fotos : [];
+    const disponivel = Number(equipamento.disponivel) === 1 && Number(equipamento.quantidade) > 0;
+    const usuario = obterUsuarioPainel();
+    const dono = Number(usuario?.id_usuario) > 0 && Number(usuario.id_usuario) === Number(equipamento.id_usuario_prestador);
+    const capa = fotos.length
+        ? `<img id="fotoDetalheEquipamento" class="equipamento-foto-principal" src="${API_BASE_URL}${escaparHTML(fotos[0])}" alt="${escaparHTML(equipamento.nome_equipamento)}">`
+        : '<div class="equipamento-sem-foto">📷 Sem fotos cadastradas</div>';
+    const miniaturas = fotos.length > 1
+        ? `<div class="equipamento-miniaturas">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoDetalheEquipamento(${Number(idEquipamento)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="${API_BASE_URL}${escaparHTML(foto)}" alt="Foto ${indice + 1}"></button>`).join('')}</div>` : '';
+    conteudo.innerHTML = `<button type="button" class="equipamento-detalhe-fechar" onclick="fecharDetalhesEquipamento()" aria-label="Fechar">×</button>
+        <div class="equipamento-detalhe-grid"><div>${capa}${miniaturas}</div>
+        <div class="equipamento-detalhe-info"><span class="solicitacao-tipo">EQUIPAMENTO PARA LOCAÇÃO</span>
+            <h2 id="equipamentoDetalheTitulo">${escaparHTML(equipamento.nome_equipamento)}</h2>
+            <p class="equipamento-dono">Oferecido por <strong>${escaparHTML(equipamento.nome || 'Prestador')}</strong></p>
+            <p>📍 ${escaparHTML(equipamento.cidade)}${equipamento.estado ? `, ${escaparHTML(equipamento.estado)}` : ''}</p>
+            <p class="equipamento-preco">${Number(equipamento.valor_diaria || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}<small> / diária</small></p>
+            <p><strong>Tipo:</strong> ${escaparHTML(equipamento.tipo_equipamento || 'Não informado')} · <strong>Quantidade:</strong> ${Number(equipamento.quantidade) || 0}</p>
+            <p class="equipamento-disponibilidade ${disponivel ? 'disponivel' : 'indisponivel'}">${disponivel ? 'Disponível para solicitar' : 'Indisponível no momento'}</p>
+            <div class="equipamento-detalhe-acoes">${dono ? '<span>Este anúncio pertence à sua conta.</span>' : `<button type="button" class="perfil-botao-contato perfil-botao-solicitar" onclick="abrirSolicitacaoEquipamento(${Number(idEquipamento)})" ${disponivel ? '' : 'disabled'}>📦 Solicitar aluguel</button><button type="button" class="perfil-botao-contato" onclick="entrarEmContatoEquipamento(${Number(idEquipamento)})">💬 Entrar em contato</button>`}</div>
+        </div></div>
+        <section class="equipamento-descricao"><h3>Descrição</h3><p>${escaparHTML(equipamento.descricao || 'O prestador ainda não adicionou uma descrição.')}</p></section>
+        <section class="equipamento-avaliacoes"><h3>Avaliações do equipamento <span id="resumoAvaliacoesEquipamento-${Number(idEquipamento)}"></span></h3><div id="avaliacoesEquipamento-${Number(idEquipamento)}" class="lista-avaliacoes">Carregando avaliações...</div></section>`;
+    modal.classList.add('ativo');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    carregarAvaliacoesEquipamento(Number(idEquipamento));
+}
+
+function selecionarFotoDetalheEquipamento(idEquipamento, indice) {
+    const equipamento = todosEquipamentos.find(item => Number(item.id_equipamento) === Number(idEquipamento));
+    const imagem = document.getElementById('fotoDetalheEquipamento');
+    if (equipamento?.fotos?.[indice] && imagem) imagem.src = `${API_BASE_URL}${equipamento.fotos[indice]}`;
+}
+
+function fecharDetalhesEquipamento() {
+    const modal = document.getElementById('modalEquipamentoDetalhe');
+    if (!modal) return;
+    modal.classList.remove('ativo');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+}
+
+function fecharDetalhesEquipamentoFora(event) {
+    if (event.target === document.getElementById('modalEquipamentoDetalhe')) fecharDetalhesEquipamento();
+}
+
+function entrarEmContatoEquipamento(idEquipamento) {
+    const equipamento = todosEquipamentos.find(item => Number(item.id_equipamento) === Number(idEquipamento));
+    if (!equipamento) return;
+    fecharDetalhesEquipamento();
+    iniciarConversa(Number(equipamento.id_prestador));
+}
+
+async function carregarAvaliacoesEquipamento(idEquipamento) {
+    const lista = document.getElementById(`avaliacoesEquipamento-${Number(idEquipamento)}`);
+    if (!lista) return;
+    try {
+        const resposta = await fetch(`${API_BASE_URL}/equipamentos/${Number(idEquipamento)}/avaliacoes`);
+        const resultado = await resposta.json();
+        if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || 'Não foi possível carregar as avaliações.');
+        const resumo = resultado.resumo || {};
+        const campo = document.getElementById(`resumoAvaliacoesEquipamento-${Number(idEquipamento)}`);
+        if (campo) campo.textContent = Number(resumo.quantidade_notas) > 0
+            ? `· ${textoEstrelas(resumo.media)} (${Number(resumo.quantidade_notas)})` : '· Ainda sem notas';
+        lista.innerHTML = resultado.avaliacoes?.length
+            ? resultado.avaliacoes.map(avaliacao => htmlCartaoAvaliacao(avaliacao)).join('')
+            : '<span class="avaliacao-sem-comentario">Ainda não há comentários para este equipamento.</span>';
+    } catch (erro) {
+        lista.innerHTML = `<span class="avaliacao-sem-comentario">${escaparHTML(erro.message)}</span>`;
+    }
 }
 
 

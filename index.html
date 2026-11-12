@@ -74,6 +74,7 @@
       class="btn-chat-nav"
       onclick="openChat()">
       💬 Chat
+      <span id="badgeChatNotificacoes" class="badge-notificacao" hidden></span>
     </a>
 
 
@@ -97,8 +98,9 @@
             📋 Meus anúncios
         </a>
 
-        <a href="#" onclick="abrirMeusPedidos(); return false;">
+        <a id="navPedidosDropdown" href="#" onclick="abrirMeusPedidos(); return false;">
             📦 Meus pedidos
+            <span id="badgePedidosDropdown" class="badge-notificacao badge-notificacao-inline" hidden></span>
         </a>
 
         <div class="dropdown-divider"></div>
@@ -1291,6 +1293,17 @@
 
 <div id="modalPerfilPrestador" class="modal-perfil-prestador" aria-hidden="true"></div>
 
+<div id="modalSolicitacao" class="solicitacao-overlay" aria-hidden="true" onclick="fecharSolicitacaoFora(event)">
+  <section class="solicitacao-modal" role="dialog" aria-modal="true" aria-labelledby="solicitacaoTitulo">
+    <button type="button" class="solicitacao-fechar" onclick="fecharSolicitacao()" aria-label="Fechar">×</button>
+    <div id="solicitacaoConteudo"></div>
+  </section>
+</div>
+
+<div id="modalEquipamentoDetalhe" class="equipamento-detalhe-overlay" aria-hidden="true" onclick="fecharDetalhesEquipamentoFora(event)">
+  <section id="equipamentoDetalheConteudo" class="equipamento-detalhe-modal" role="dialog" aria-modal="true" aria-labelledby="equipamentoDetalheTitulo"></section>
+</div>
+
 
 
 <!-- =========================
@@ -2116,9 +2129,10 @@
                     📋 Meus anúncios
                 </button>
 
-                <button class="painel-nav-btn"
+                <button id="nav-pedidos" class="painel-nav-btn"
                         onclick="mostrarSecaoPainel('pedidos')">
                     📦 Meus pedidos
+                    <span id="badgePedidosPainel" class="badge-notificacao" hidden></span>
                 </button>
 
                 <div class="painel-sidebar-divider"></div>
