@@ -2,6 +2,25 @@ const API_BASE_URL = ["localhost", "127.0.0.1"].includes(window.location.hostnam
     ? "http://localhost:3000"
     : "https://contrumax-ofc.onrender.com";
 
+function alternarMenuMobile() {
+    const menu = document.querySelector('.nav-links');
+    const botao = document.getElementById('menuMobileToggle');
+    if (!menu || !botao) return;
+    const aberto = menu.classList.toggle('menu-mobile-aberto');
+    botao.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+    botao.setAttribute('aria-label', aberto ? 'Fechar menu' : 'Abrir menu');
+}
+
+document.querySelector('.nav-links')?.addEventListener('click', event => {
+    if (event.target.closest('a') && window.matchMedia('(max-width: 1100px)').matches) {
+        const menu = document.querySelector('.nav-links');
+        const botao = document.getElementById('menuMobileToggle');
+        menu?.classList.remove('menu-mobile-aberto');
+        botao?.setAttribute('aria-expanded', 'false');
+        botao?.setAttribute('aria-label', 'Abrir menu');
+    }
+});
+
 /* ── Auth Modal ─── */
   function openModal(tab) {
     document.getElementById('chatOverlay').classList.remove('open');
@@ -1673,8 +1692,12 @@ document.getElementById("camposProfissional").style.display = "none";
 let todosEquipamentos = [];
 
 fetch(`${API_BASE_URL}/equipamentos`)
-.then(res => res.json())
+.then(res => {
+    if (!res.ok) throw new Error(`Falha ao consultar equipamentos (HTTP ${res.status}).`);
+    return res.json();
+})
 .then(equipamentos => {
+    if (!Array.isArray(equipamentos)) throw new Error('A resposta de equipamentos está em formato inválido.');
 
     todosEquipamentos = equipamentos;
 
@@ -1684,6 +1707,10 @@ fetch(`${API_BASE_URL}/equipamentos`)
 .catch(erro => {
 
     console.error("Erro equipamentos:", erro);
+    const lista = document.getElementById("lista-equipamentos");
+    const resultado = document.getElementById("resultadoBuscaEquipamentos");
+    if (lista) lista.innerHTML = '<div class="busca-equipamentos-vazio"><h3>Não foi possível carregar os equipamentos</h3><p>Tente novamente em instantes.</p></div>';
+    if (resultado) resultado.textContent = '';
 
 });
 
@@ -1691,20 +1718,34 @@ fetch(`${API_BASE_URL}/equipamentos`)
 function renderizarEquipamentos(equipamentos) {
 
     const lista = document.getElementById("lista-equipamentos");
+    if (!lista) return;
+    const resultado = document.getElementById("resultadoBuscaEquipamentos");
+    if (resultado) {
+        resultado.textContent = equipamentos.length === todosEquipamentos.length
+            ? `${equipamentos.length} ${equipamentos.length === 1 ? 'equipamento encontrado' : 'equipamentos encontrados'}`
+            : `${equipamentos.length} de ${todosEquipamentos.length} equipamentos encontrados`;
+    }
+    if (!equipamentos.length) {
+        lista.innerHTML = '<div class="busca-equipamentos-vazio"><h3>Nenhum equipamento encontrado</h3><p>Altere os filtros e tente novamente.</p></div>';
+        return;
+    }
 
-    lista.innerHTML = "";
+    lista.innerHTML = equipamentos.map(equipamento => {
 
-    equipamentos.forEach(equipamento => {
-
-        const fotos = equipamento.fotos || [];
+        const fotos = Array.isArray(equipamento.fotos) ? equipamento.fotos : [];
 
         const idCarrossel = `carrossel-${equipamento.id_equipamento}`;
+        const nome = escaparHTML(equipamento.nome_equipamento || 'Equipamento');
+        const prestador = escaparHTML(equipamento.nome || 'Prestador');
+        const cidade = escaparHTML(equipamento.cidade || 'Cidade não informada');
+        const estado = escaparHTML(equipamento.estado || '');
+        const preco = Number(equipamento.valor_diaria) || 0;
+        const quantidade = Number(equipamento.quantidade) || 0;
+        const fotoInicial = fotos.length > 0 ? `${API_BASE_URL}${escaparHTML(fotos[0])}` : '';
 
-        const imagemInicial = fotos.length > 0
-            ? `${API_BASE_URL}${fotos[0]}`
-            : "";
+        const disponivel = Number(equipamento.disponivel) === 1 && quantidade > 0;
 
-        lista.innerHTML += `
+        return `
 
         <div class="machine-card" onclick="abrirDetalhesEquipamento(${Number(equipamento.id_equipamento)}, event)">
 
@@ -1715,8 +1756,8 @@ function renderizarEquipamentos(equipamentos) {
                     ? `
                         <img
                             class="machine-photo"
-                            src="${imagemInicial}"
-                            alt="${equipamento.nome_equipamento}"
+                            src="${fotoInicial}"
+                            alt="${nome}"
                         >
 
                         ${
@@ -1752,14 +1793,15 @@ function renderizarEquipamentos(equipamentos) {
 
             <div class="machine-info">
 
-                <h3>${equipamento.nome_equipamento}</h3>
+                <h3>${nome}</h3>
 
                 <ul class="machine-features">
-                    <li>👤 ${equipamento.nome}</li>
-                    <li>📍 ${equipamento.cidade} - ${equipamento.estado}</li>
-                    <li>💰 R$ ${equipamento.valor_diaria}/dia</li>
-                    <li>📦 Quantidade: ${equipamento.quantidade}</li>
+                    <li>👤 ${prestador}</li>
+                    <li>📍 ${cidade}${estado ? ` - ${estado}` : ''}</li>
+                    <li>💰 ${preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/dia</li>
+                    <li>📦 Quantidade: ${quantidade}</li>
                     <li>${Number(equipamento.total_avaliacoes) > 0 && Number(equipamento.avaliacao) > 0 ? `⭐ ${Number(equipamento.avaliacao).toFixed(1)} (${Number(equipamento.total_avaliacoes)} avaliações)` : 'Ainda sem avaliações'}</li>
+                    <li class="machine-availability ${disponivel ? 'disponivel' : 'indisponivel'}">${disponivel ? 'Disponível para aluguel' : 'Indisponível no momento'}</li>
                 </ul>
 
                 <button class="btn-quote" type="button" onclick="abrirDetalhesEquipamento(${Number(equipamento.id_equipamento)}, event)">
@@ -1772,7 +1814,7 @@ function renderizarEquipamentos(equipamentos) {
 
         `;
 
-    });
+    }).join('');
 
 }
 
@@ -1893,31 +1935,28 @@ function mudarFoto(idEquipamento, direcao) {
 }
 
 
-// FILTRO DE EQUIPAMENTOS
+function filtrarEquipamentos(event) {
+    event?.preventDefault();
+    const termo = normalizarTermoBusca(document.getElementById('buscaEquipamento')?.value);
+    const localizacao = normalizarTermoBusca(document.getElementById('buscaCidadeEquipamento')?.value);
+    const termosLocalizacao = localizacao.split(/[\s,]+/).filter(Boolean);
 
-document.addEventListener("input", (e) => {
+    const filtrados = todosEquipamentos.filter(equipamento => {
+        const textoPesquisavel = normalizarTermoBusca([
+            equipamento.nome_equipamento, equipamento.tipo_equipamento
+        ].filter(Boolean).join(' '));
+        const enderecoPesquisavel = normalizarTermoBusca([equipamento.cidade, equipamento.estado].filter(Boolean).join(' '));
+        return (!termo || textoPesquisavel.includes(termo)) &&
+            (!termosLocalizacao.length || termosLocalizacao.every(parte => enderecoPesquisavel.includes(parte)));
+    });
 
-    if (e.target.id === "buscaEquipamento") {
+    renderizarEquipamentos(filtrados);
+}
 
-        const busca = e.target.value.toLowerCase();
-
-        const filtrados = todosEquipamentos.filter(equipamento =>
-
-            (equipamento.nome_equipamento || "").toLowerCase().includes(busca) ||
-
-            (equipamento.tipo_equipamento || "").toLowerCase().includes(busca) ||
-
-            (equipamento.nome || "").toLowerCase().includes(busca) ||
-
-            (equipamento.cidade || "").toLowerCase().includes(busca)
-
-        );
-
-        renderizarEquipamentos(filtrados);
-
-    }
-
-});
+function limparBuscaEquipamentos() {
+    document.getElementById('formBuscaEquipamentos')?.reset();
+    renderizarEquipamentos(todosEquipamentos);
+}
 async function cadastrarEquipamento() {
 
     const usuario = JSON.parse(

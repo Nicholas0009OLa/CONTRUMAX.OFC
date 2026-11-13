@@ -39,7 +39,11 @@
   </a>
 
 
-  <ul class="nav-links">
+  <button class="menu-mobile-toggle" id="menuMobileToggle" type="button" aria-label="Abrir menu" aria-controls="navLinksPrincipal" aria-expanded="false" onclick="alternarMenuMobile()">
+    <span></span><span></span><span></span>
+  </button>
+
+  <ul class="nav-links" id="navLinksPrincipal">
 
     <li>
       <a href="#inicio">Início</a>
@@ -1186,19 +1190,22 @@
 
   <!-- BUSCA DE EQUIPAMENTOS -->
 
-  <div style="margin-bottom:30px;">
+  <form class="busca-equipamentos" id="formBuscaEquipamentos" onsubmit="filtrarEquipamentos(event)">
+    <label class="busca-equipamentos-termo">
+      Equipamento ou tipo
+      <input type="search" id="buscaEquipamento" placeholder="Ex.: betoneira, andaime">
+    </label>
+    <label>
+      Cidade ou estado
+      <input type="search" id="buscaCidadeEquipamento" placeholder="Ex.: Santos ou SP">
+    </label>
+    <div class="busca-equipamentos-acoes">
+      <button type="submit" class="btn-primary">Buscar equipamentos</button>
+      <button type="button" class="btn-filtro-limpar" onclick="limparBuscaEquipamentos()">Limpar filtros</button>
+    </div>
+  </form>
 
-    <input
-      type="text"
-      id="buscaEquipamento"
-      placeholder="Buscar equipamento ou tipo..."
-      style="
-        width:100%;
-        padding:15px;
-        font-size:16px;
-      ">
-
-  </div>
+  <p id="resultadoBuscaEquipamentos" class="resultado-busca-equipamentos" aria-live="polite"></p>
 
 
 
