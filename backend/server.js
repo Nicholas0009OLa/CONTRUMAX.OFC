@@ -160,6 +160,43 @@ app.get('/usuarios', (req, res) => {
 // Isso evita duplicação.
 // ===============================
 
+function normalizarTelefoneBrasil(valor) {
+    const texto = String(valor || '').trim();
+    if (texto && !/^[\d\s()+.-]+$/.test(texto)) return null;
+    const digitos = texto.replace(/\D/g, '');
+    if (!/^[1-9]\d{9,10}$/.test(digitos) || Number(digitos.slice(0, 2)) < 11) return null;
+    return digitos;
+}
+
+function validarDocumentoCpfCnpj(valor) {
+    const texto = String(valor || '').trim();
+    if (texto && !/^[\d\s().\/-]+$/.test(texto)) return false;
+    const digitos = texto.replace(/\D/g, '');
+    if (/^(\d)\1+$/.test(digitos)) return false;
+
+    if (digitos.length === 11) {
+        const calcular = tamanho => {
+            const soma = digitos.slice(0, tamanho).split('').reduce(
+                (total, numero, indice) => total + Number(numero) * (tamanho + 1 - indice), 0
+            );
+            const resto = (soma * 10) % 11;
+            return resto === 10 ? 0 : resto;
+        };
+        return calcular(9) === Number(digitos[9]) && calcular(10) === Number(digitos[10]);
+    }
+
+    if (digitos.length === 14) {
+        const calcular = pesos => {
+            const soma = pesos.reduce((total, peso, indice) => total + Number(digitos[indice]) * peso, 0);
+            const resto = soma % 11;
+            return resto < 2 ? 0 : 11 - resto;
+        };
+        return calcular([5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) === Number(digitos[12]) &&
+            calcular([6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) === Number(digitos[13]);
+    }
+    return false;
+}
+
 app.post('/cadastro', (req, res) => {
 
     const {
@@ -169,6 +206,17 @@ app.post('/cadastro', (req, res) => {
         telefone,
         tipo_usuario
     } = req.body;
+
+    const telefoneNormalizado = normalizarTelefoneBrasil(telefone);
+    if (!String(nome || '').trim() || !String(email || '').trim() || !String(senha || '') || !telefoneNormalizado) {
+        return res.status(400).json({
+            sucesso: false,
+            mensagem: 'Informe nome, e-mail, senha e um telefone válido com DDD (10 ou 11 números).'
+        });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Informe um e-mail válido.' });
+    }
 
     // Converte o tipo para o padrão aceito pelo banco
     const tipoRecebido = String(tipo_usuario || "").trim().toLowerCase();
@@ -217,10 +265,10 @@ app.post('/cadastro', (req, res) => {
 
                 [
                     idUsuario,
-                    nome,
-                    email,
+                    String(nome).trim(),
+                    String(email).trim(),
                     senha,
-                    telefone,
+                    telefoneNormalizado,
                     tipoBanco
                 ],
 
@@ -277,6 +325,14 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
         valor_diaria,
         descricao
     } = req.body;
+
+    if (!validarDocumentoCpfCnpj(cpf_cnpj)) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Informe um CPF ou CNPJ completo e válido.' });
+    }
+    if (!String(profissao || '').trim() || !String(cidade || '').trim() || !String(estado || '').trim()) {
+        return res.status(400).json({ sucesso: false, mensagem: 'Informe profissão, cidade e estado.' });
+    }
+    const cpfCnpjNormalizado = String(cpf_cnpj).replace(/\D/g, '');
 
     // Verifica se o usuário já possui cadastro de prestador
     db.query(
@@ -335,7 +391,7 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
                         [
                             idPrestador,
                             id_usuario,
-                            cpf_cnpj,
+                            cpfCnpjNormalizado,
                             profissao,
                             cidade,
                             estado,

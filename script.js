@@ -370,14 +370,145 @@ function selectTipo(btn){
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeChat(); } });
   
  
+function mascararTelefoneBrasil(valor) {
+    const digitos = String(valor || '').replace(/\D/g, '').slice(0, 11);
+    if (digitos.length <= 2) return digitos.length === 2 ? `(${digitos}) ` : digitos;
+    const ddd = digitos.slice(0, 2);
+    const numero = digitos.slice(2);
+    const divisor = digitos.length > 10 || numero.startsWith('9') ? 5 : 4;
+    if (numero.length <= divisor) return `(${ddd}) ${numero}`;
+    return `(${ddd}) ${numero.slice(0, divisor)}-${numero.slice(divisor)}`;
+}
+
+function mascararCpfCnpj(valor) {
+    const digitos = String(valor || '').replace(/\D/g, '').slice(0, 14);
+    if (digitos.length <= 11) {
+        if (digitos.length <= 3) return digitos;
+        if (digitos.length <= 6) return `${digitos.slice(0, 3)}.${digitos.slice(3)}`;
+        if (digitos.length <= 9) return `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6)}`;
+        return `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6, 9)}-${digitos.slice(9)}`;
+    }
+    if (digitos.length <= 2) return digitos;
+    if (digitos.length <= 5) return `${digitos.slice(0, 2)}.${digitos.slice(2)}`;
+    if (digitos.length <= 8) return `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5)}`;
+    if (digitos.length <= 12) return `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5, 8)}/${digitos.slice(8)}`;
+    return `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5, 8)}/${digitos.slice(8, 12)}-${digitos.slice(12)}`;
+}
+
+function anexarMascaraNumerica(campo, mascara) {
+    if (!campo || campo.dataset.mascaraCadastro === 'ativa') return;
+    campo.dataset.mascaraCadastro = 'ativa';
+    campo.addEventListener('keydown', evento => {
+        if (evento.key.length === 1 && !/^\d$/.test(evento.key) && !evento.ctrlKey && !evento.metaKey && !evento.altKey) {
+            evento.preventDefault();
+        }
+    });
+    campo.addEventListener('input', evento => {
+        const elemento = evento.currentTarget;
+        const posicaoAntiga = elemento.selectionStart ?? elemento.value.length;
+        const digitosAntes = elemento.value.slice(0, posicaoAntiga).replace(/\D/g, '').length;
+        const valorFormatado = mascara(elemento.value);
+        elemento.value = valorFormatado;
+        let digitosContados = 0;
+        let novaPosicao = valorFormatado.length;
+        if (digitosAntes === 0) novaPosicao = 0;
+        else {
+            for (let indice = 0; indice < valorFormatado.length; indice++) {
+                if (/\d/.test(valorFormatado[indice])) digitosContados++;
+                if (digitosContados === digitosAntes) {
+                    novaPosicao = indice + 1;
+                    while (novaPosicao < valorFormatado.length && !/\d/.test(valorFormatado[novaPosicao])) novaPosicao++;
+                    break;
+                }
+            }
+        }
+        elemento.setSelectionRange?.(novaPosicao, novaPosicao);
+    });
+}
+
+function inicializarCamposCadastro() {
+    anexarMascaraNumerica(document.getElementById('telefone'), mascararTelefoneBrasil);
+    anexarMascaraNumerica(document.getElementById('cpfCnpj'), mascararCpfCnpj);
+}
+
+function validarCpfCnpj(valor) {
+    const digitos = String(valor || '').replace(/\D/g, '');
+    if (/^(\d)\1+$/.test(digitos)) return false;
+    if (digitos.length === 11) {
+        const calcular = tamanho => {
+            const soma = digitos.slice(0, tamanho).split('').reduce((total, numero, indice) => total + Number(numero) * (tamanho + 1 - indice), 0);
+            const resto = (soma * 10) % 11;
+            return resto === 10 ? 0 : resto;
+        };
+        return calcular(9) === Number(digitos[9]) && calcular(10) === Number(digitos[10]);
+    }
+    if (digitos.length === 14) {
+        const calcular = pesos => {
+            const soma = pesos.reduce((total, peso, indice) => total + Number(digitos[indice]) * peso, 0);
+            const resto = soma % 11;
+            return resto < 2 ? 0 : 11 - resto;
+        };
+        const primeiro = calcular([5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+        const segundo = calcular([6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+        return primeiro === Number(digitos[12]) && segundo === Number(digitos[13]);
+    }
+    return false;
+}
+
+function telefoneBrasilValido(valor) {
+    const digitos = String(valor || '').replace(/\D/g, '');
+    return /^[1-9]\d{9,10}$/.test(digitos) && Number(digitos.slice(0, 2)) >= 11;
+}
+
+function mostrarErroCadastro(mensagem, idCampo) {
+    alert(mensagem);
+    document.getElementById(idCampo)?.focus();
+}
+
+function validarFormularioCadastro(tipoUsuario) {
+    const nome = document.getElementById('nome').value.trim();
+    const emailCampo = document.getElementById('email');
+    const email = emailCampo.value.trim();
+    const telefone = document.getElementById('telefone').value;
+    const senha = document.getElementById('senha').value;
+    if (!nome) { mostrarErroCadastro('Informe seu nome.', 'nome'); return false; }
+    if (!email || !emailCampo.checkValidity()) { mostrarErroCadastro('Informe um e-mail válido.', 'email'); return false; }
+    if (!telefoneBrasilValido(telefone)) { mostrarErroCadastro('Informe um telefone com DDD e 10 ou 11 números.', 'telefone'); return false; }
+    if (!senha) { mostrarErroCadastro('Informe uma senha.', 'senha'); return false; }
+    if (tipoUsuario === 'profissional') {
+        if (!validarCpfCnpj(document.getElementById('cpfCnpj').value)) {
+            mostrarErroCadastro('Informe um CPF ou CNPJ completo e válido.', 'cpfCnpj'); return false;
+        }
+        for (const [id, rotulo] of [['profissao', 'profissão'], ['cidade', 'cidade'], ['estado', 'estado']]) {
+            if (!document.getElementById(id).value.trim()) {
+                mostrarErroCadastro(`Informe sua ${rotulo}.`, id); return false;
+            }
+        }
+        if (document.getElementById('fotosPrestador').files.length > 5) {
+            mostrarErroCadastro('Selecione no máximo 5 fotos.', 'fotosPrestador'); return false;
+        }
+    }
+    return true;
+}
+
+function alternarVisibilidadeSenha(botao) {
+    const campo = document.getElementById(botao?.dataset.campoSenha || '');
+    if (!campo) return;
+    const mostrar = campo.type === 'password';
+    campo.type = mostrar ? 'text' : 'password';
+    botao.setAttribute('aria-pressed', mostrar ? 'true' : 'false');
+    botao.setAttribute('aria-label', mostrar ? 'Ocultar senha' : 'Mostrar senha');
+}
+
 async function cadastrarUsuario() {
 
-    const nome = document.getElementById("nome").value;
-    const telefone = document.getElementById("telefone").value;
-    const email = document.getElementById("email").value;
+    const nome = document.getElementById("nome").value.trim();
+    const telefone = document.getElementById("telefone").value.replace(/\D/g, '');
+    const email = document.getElementById("email").value.trim();
     const senha = document.getElementById("senha").value;
 
     const tipo_usuario = tipoConta;
+    if (!validarFormularioCadastro(tipo_usuario)) return;
 
     const dados = {
         nome,
@@ -401,6 +532,10 @@ async function cadastrarUsuario() {
         );
 
         const resultado = await resposta.json();
+        if (!resposta.ok || !resultado.sucesso) {
+            alert(resultado.mensagem || resultado.erro || 'Não foi possível criar a conta. Confira os dados informados.');
+            return;
+        }
 
         if (resultado.sucesso) {
 
@@ -424,22 +559,22 @@ async function cadastrarUsuario() {
 
                 dadosProfissional.append(
                     "cpf_cnpj",
-                    document.getElementById("cpfCnpj").value
+                    document.getElementById("cpfCnpj").value.replace(/\D/g, '')
                 );
 
                 dadosProfissional.append(
                     "profissao",
-                    document.getElementById("profissao").value
+                    document.getElementById("profissao").value.trim()
                 );
 
                 dadosProfissional.append(
                     "cidade",
-                    document.getElementById("cidade").value
+                    document.getElementById("cidade").value.trim()
                 );
 
                 dadosProfissional.append(
                     "estado",
-                    document.getElementById("estado").value
+                    document.getElementById("estado").value.trim()
                 );
 
                 dadosProfissional.append(
@@ -449,17 +584,12 @@ async function cadastrarUsuario() {
 
                 dadosProfissional.append(
                     "descricao",
-                    document.getElementById("descricao").value
+                    document.getElementById("descricao").value.trim()
                 );
 
-                // Adiciona as fotos selecionadas
+                // Adiciona as fotos selecionadas depois de validar a quantidade antes do cadastro da conta.
                 const campoFotos = document.getElementById("fotosPrestador");
                 const fotos = campoFotos.files;
-
-                if (fotos.length > 5) {
-                    alert("Selecione no máximo 5 fotos.");
-                    return;
-                }
 
                 for (let i = 0; i < fotos.length; i++) {
                     dadosProfissional.append("fotos", fotos[i]);
@@ -1251,6 +1381,7 @@ async function carregarMeusAnuncios() {
 }
 
 verificarLogin();
+inicializarCamposCadastro();
 
 let todosPrestadores = [];
 let requisicaoBuscaPrestadores = 0;

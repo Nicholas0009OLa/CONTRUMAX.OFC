@@ -189,24 +189,28 @@
 
       <div class="mform-group">
 
-        <label>E-mail</label>
+        <label for="loginEmail">E-mail</label>
 
         <input
           type="email"
           id="loginEmail"
-          placeholder="seu@email.com">
+          placeholder="seu@email.com"
+          autocomplete="email">
 
       </div>
 
 
       <div class="mform-group">
 
-        <label>Senha</label>
-
-        <input
-          type="password"
-          id="loginSenha"
-          placeholder="••••••••">
+        <label for="loginSenha">Senha</label>
+        <div class="campo-senha">
+          <input
+            type="password"
+            id="loginSenha"
+            placeholder="••••••••"
+            autocomplete="current-password">
+          <button class="alternar-senha" type="button" aria-label="Mostrar senha" aria-pressed="false" onclick="alternarVisibilidadeSenha(this)" data-campo-senha="loginSenha"><span class="icone-olho" aria-hidden="true"></span></button>
+        </div>
 
       </div>
 
@@ -281,7 +285,7 @@
 
         <div class="mform-group">
 
-          <label>Nome</label>
+          <label for="nome">Nome</label>
 
           <input
             type="text"
@@ -292,25 +296,32 @@
 
         <div class="mform-group">
 
-          <label>Telefone</label>
+          <label for="telefone">Telefone</label>
 
           <input
             type="text"
-            id="telefone">
+            id="telefone"
+            inputmode="tel"
+            autocomplete="tel"
+            maxlength="15"
+            placeholder="(13) 99999-9999"
+            aria-describedby="telefoneAjuda">
 
         </div>
 
       </div>
 
+      <small id="telefoneAjuda" class="ajuda-campo-cadastro">Informe DDD e número: telefone fixo com 10 dígitos ou celular com 11.</small>
 
 
       <div class="mform-group">
 
-        <label>E-mail</label>
+        <label for="email">E-mail</label>
 
         <input
           type="email"
-          id="email">
+            id="email"
+            autocomplete="email">
 
       </div>
 
@@ -318,12 +329,14 @@
 
       <div class="mform-group">
 
-        <label>Senha</label>
-
-        <input
-          type="password"
-          id="senha">
-
+        <label for="senha">Senha</label>
+        <div class="campo-senha">
+          <input
+            type="password"
+            id="senha"
+            autocomplete="new-password">
+          <button class="alternar-senha" type="button" aria-label="Mostrar senha" aria-pressed="false" onclick="alternarVisibilidadeSenha(this)" data-campo-senha="senha"><span class="icone-olho" aria-hidden="true"></span></button>
+        </div>
       </div>
 
 
@@ -337,18 +350,23 @@
 
         <div class="mform-group">
 
-          <label>CPF/CNPJ</label>
+          <label for="cpfCnpj">CPF/CNPJ</label>
 
           <input
             type="text"
-            id="cpfCnpj">
+            id="cpfCnpj"
+            inputmode="numeric"
+            maxlength="18"
+            placeholder="CPF ou CNPJ"
+            aria-describedby="documentoAjuda">
+          <small id="documentoAjuda" class="ajuda-campo-cadastro">Informe um CPF válido (11 números) ou CNPJ válido (14 números).</small>
 
         </div>
 
 
         <div class="mform-group">
 
-          <label>Profissão</label>
+          <label for="profissao">Profissão</label>
 
           <input
             type="text"
@@ -361,7 +379,7 @@
 
           <div class="mform-group">
 
-            <label>Cidade</label>
+            <label for="cidade">Cidade</label>
 
             <input
               type="text"
@@ -372,7 +390,7 @@
 
           <div class="mform-group">
 
-            <label>Estado</label>
+            <label for="estado">Estado</label>
 
             <input
               type="text"
@@ -385,7 +403,7 @@
 
         <div class="mform-group">
 
-          <label>Valor da diária</label>
+          <label for="valorDiaria">Valor da diária</label>
 
           <input
             type="number"
@@ -396,9 +414,9 @@
 
         <div class="mform-group">
 
-          <label>Descrição</label>
+          <label for="descricao">Descrição</label>
 
-          <textarea id="descricao"></textarea>
+          <textarea id="descricao" rows="5" placeholder="Conte sobre seus serviços, experiência e especialidades."></textarea>
 
         </div>
         
@@ -418,7 +436,6 @@
           <div id="previewFotosPrestador"></div>
 
 </div>
-
 
       </div>
 
