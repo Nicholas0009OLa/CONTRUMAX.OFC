@@ -668,6 +668,11 @@ async function loginUsuario() {
 
     verificarLogin(); // atualiza o menu imediatamente
 
+    if (String(resultado.usuario.tipo_usuario || '').toUpperCase() === 'ADMIN') {
+        abrirPainelUsuario('admin-dashboard');
+        return;
+    }
+
     if (prestadorPendenteParaChat) {
         const idPrestadorPendente = prestadorPendenteParaChat;
         prestadorPendenteParaChat = null;
@@ -818,6 +823,12 @@ function verificarLogin() {
 
     if (usuario) {
 
+        const ehAdmin = String(usuario.tipo_usuario || '').toUpperCase() === 'ADMIN';
+        document.querySelectorAll('.admin-nav-btn').forEach(botao => { botao.hidden = !ehAdmin; });
+        document.querySelectorAll('.painel-sidebar > .painel-nav-btn:not(.admin-nav-btn):not(.opcao-sair), .painel-sidebar > .painel-sidebar-divider').forEach(botao => { botao.hidden = ehAdmin; });
+        const tituloPainel = document.querySelector('.painel-usuario-header h2');
+        if (tituloPainel) tituloPainel.textContent = ehAdmin ? 'Painel administrativo' : 'Minha área';
+
         atualizarRotulosPedidos();
 
         document.getElementById("btnCadastro").style.display = "none";
@@ -936,6 +947,13 @@ function abrirPainelUsuario(secao) {
         return;
     }
 
+    const ehAdmin = String(usuario.tipo_usuario || '').toUpperCase() === 'ADMIN';
+    if (ehAdmin && !String(secao).startsWith('admin-')) secao = 'admin-dashboard';
+    if (!ehAdmin && String(secao).startsWith('admin-')) {
+        alert('Acesso exclusivo para administradores.');
+        return;
+    }
+
     document.getElementById("painelUsuarioOverlay").classList.add("ativo");
 
     atualizarRotulosPedidos();
@@ -956,6 +974,12 @@ function mostrarSecaoPainel(secao) {
     const conteudo = document.getElementById("conteudoPainelUsuario");
 
     if (!usuario || !conteudo) return;
+
+    if (String(secao).startsWith('admin-')) {
+        if (String(usuario.tipo_usuario || '').toUpperCase() !== 'ADMIN') return;
+        carregarSecaoAdmin(secao);
+        return;
+    }
 
     // Atualiza o botão selecionado no menu lateral
     document.querySelectorAll(".painel-nav-btn").forEach(botao => {
@@ -1192,6 +1216,98 @@ function abrirMeusAnuncios() {
 
 function abrirMeusPedidos() {
     abrirPainelUsuario("pedidos");
+}
+
+async function requisicaoAdmin(caminho, opcoes = {}) {
+    const usuario = obterUsuarioPainel();
+    if (String(usuario?.tipo_usuario || '').toUpperCase() !== 'ADMIN' || !usuario?.auth_token) {
+        throw new Error('Acesso exclusivo para administradores.');
+    }
+    const resposta = await fetch(`${API_BASE_URL}${caminho}`, {
+        ...opcoes,
+        headers: {
+            ...(opcoes.body ? { 'Content-Type': 'application/json' } : {}),
+            ...(opcoes.headers || {}),
+            Authorization: `Bearer ${usuario.auth_token}`
+        }
+    });
+    const resultado = await resposta.json();
+    if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || 'Não foi possível concluir a operação administrativa.');
+    return resultado;
+}
+
+function renderizarTabelaAdmin(titulo, buscaPlaceholder, colunas, linhas, secao) {
+    const conteudo = document.getElementById('conteudoPainelUsuario');
+    conteudo.innerHTML = `<h2 class="titulo-secao-painel">${titulo}</h2>
+      <div class="admin-busca"><input id="buscaAdmin" type="search" value="${escaparTextoPainel(buscaAdminAtual)}" placeholder="${buscaPlaceholder}" onkeydown="if(event.key==='Enter') carregarSecaoAdmin('${secao}')">
+      <button type="button" class="btn-primary" onclick="carregarSecaoAdmin('${secao}')">Buscar</button></div>
+      <div class="admin-tabela-wrap"><table class="admin-tabela"><thead><tr>${colunas.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>`;
+}
+
+function botaoAdminRotulo(ativo, alvo, id, verbo) {
+    const rotulo = ativo ? (verbo === 'visivel' ? 'Ocultar' : 'Suspender') : (verbo === 'visivel' ? 'Reativar' : 'Reativar');
+    return `<button class="admin-acao" type="button" onclick="alterarStatusAdmin('${alvo}','${String(id)}',${ativo ? 0 : 1})">${rotulo}</button>`;
+}
+
+async function alterarStatusAdmin(alvo, id, valor) {
+    if (alvo === 'equipamento' && valor === 0 && !confirm('Ocultar este anúncio? O histórico de solicitações será preservado.')) return;
+    if (alvo === 'usuario' && valor === 0 && !confirm('Suspender esta conta? A pessoa perderá acesso à plataforma.')) return;
+    if (alvo === 'prestador' && valor === 0 && !confirm('Suspender este perfil profissional?')) return;
+    try {
+        const mapas = {
+            usuario: [`/api/admin/usuarios/${id}/status`, { ativo: valor }],
+            prestador: [`/api/admin/prestadores/${id}/status`, { ativo: valor }],
+            equipamento: [`/api/admin/equipamentos/${id}/status`, { visivel: valor }],
+            avaliacao: [`/api/admin/avaliacoes/${String(id).split(':').pop()}/status`, { visivel: valor, fonte: String(id).startsWith('LEGADA:') ? 'LEGADA' : 'NOVA' }]
+        };
+        const [url, body] = mapas[alvo];
+        await requisicaoAdmin(url, { method: 'PATCH', body: JSON.stringify(body) });
+        carregarSecaoAdmin(secaoAdminAtual);
+    } catch (erro) { alert(erro.message); }
+}
+
+let secaoAdminAtual = 'admin-dashboard';
+let buscaAdminAtual = '';
+
+async function carregarSecaoAdmin(secao) {
+    const buscaAnterior = document.getElementById('buscaAdmin');
+    if (buscaAnterior) buscaAdminAtual = buscaAnterior.value;
+    secaoAdminAtual = secao;
+    const conteudo = document.getElementById('conteudoPainelUsuario');
+    conteudo.innerHTML = '<p>Carregando painel administrativo…</p>';
+    document.querySelectorAll('.painel-nav-btn').forEach(botao => botao.classList.toggle('ativo', botao.getAttribute('onclick') === `mostrarSecaoPainel('${secao}')`));
+    try {
+        if (secao === 'admin-dashboard') {
+            const { indicadores } = await requisicaoAdmin('/api/admin/dashboard');
+            const cards = [['Usuários', indicadores.usuarios], ['Contratantes', indicadores.clientes], ['Prestadores', indicadores.prestadores], ['Equipamentos', indicadores.equipamentos], ['Solicitações', indicadores.solicitacoes]];
+            conteudo.innerHTML = `<h2 class="titulo-secao-painel">Visão geral</h2><p class="descricao-secao-painel">Resumo da CONSTRUMAX.</p><div class="admin-indicadores">${cards.map(([nome, total]) => `<article class="admin-indicador"><span>${nome}</span><strong>${total}</strong></article>`).join('')}</div>`;
+            return;
+        }
+        const busca = encodeURIComponent(buscaAdminAtual || '');
+        if (secao === 'admin-usuarios') {
+            const { usuarios } = await requisicaoAdmin(`/api/admin/usuarios?busca=${busca}`);
+            renderizarTabelaAdmin('Gerenciar usuários', 'Buscar por nome ou e-mail', ['Nome', 'E-mail', 'Telefone', 'Tipo', 'Status', 'Ação'], usuarios.map(u => `<tr><td>${escaparTextoPainel(u.nome)}</td><td>${escaparTextoPainel(u.email)}</td><td>${escaparTextoPainel(u.telefone || '—')}</td><td>${escaparTextoPainel(u.tipo_usuario)}</td><td>${Number(u.ativo) ? 'Ativo' : 'Suspenso'}</td><td>${u.tipo_usuario === 'ADMIN' ? 'Administrador' : botaoAdminRotulo(Number(u.ativo), 'usuario', u.id_usuario)}</td></tr>`).join(''), secao);
+        } else if (secao === 'admin-prestadores') {
+            const { prestadores } = await requisicaoAdmin(`/api/admin/prestadores?busca=${busca}`);
+            renderizarTabelaAdmin('Gerenciar prestadores', 'Buscar por nome, e-mail ou profissão', ['Profissional', 'Contato', 'Profissão', 'Cidade', 'Perfil', 'Equipamentos', 'Status', 'Ação'], prestadores.map(p => `<tr><td>${escaparTextoPainel(p.nome)}</td><td>${escaparTextoPainel(p.email)}<br>${escaparTextoPainel(p.telefone || '')}</td><td>${escaparTextoPainel(p.profissao || '—')}</td><td>${escaparTextoPainel([p.cidade, p.estado].filter(Boolean).join(', ') || '—')}</td><td>${p.verificado ? 'Verificado' : 'Não verificado'}${p.valor_diaria == null ? '' : `<br>R$ ${Number(p.valor_diaria).toFixed(2)}/dia`}<details><summary>Descrição</summary>${escaparTextoPainel(p.descricao || 'Sem descrição.')}</details></td><td>${p.total_equipamentos}</td><td>${Number(p.admin_ativo) ? 'Ativo' : 'Suspenso'}</td><td>${botaoAdminRotulo(Number(p.admin_ativo), 'prestador', p.id_prestador)}</td></tr>`).join(''), secao);
+        } else if (secao === 'admin-equipamentos') {
+            const { equipamentos } = await requisicaoAdmin(`/api/admin/equipamentos?busca=${busca}`);
+            renderizarTabelaAdmin('Gerenciar equipamentos', 'Buscar por equipamento ou prestador', ['Equipamento', 'Tipo', 'Prestador', 'Diária', 'Qtd.', 'Detalhes', 'Status', 'Ação'], equipamentos.map(e => `<tr><td>${escaparTextoPainel(e.nome_equipamento)}</td><td>${escaparTextoPainel(e.tipo_equipamento || '—')}</td><td>${escaparTextoPainel(e.nome_prestador)}<br>${escaparTextoPainel(e.email_prestador)}</td><td>${e.valor_diaria == null ? '—' : `R$ ${Number(e.valor_diaria).toFixed(2)}`}</td><td>${e.quantidade}</td><td><details><summary>Descrição e fotos (${e.fotos.length})</summary><p>${escaparTextoPainel(e.descricao || 'Sem descrição.')}</p><div class="admin-fotos">${e.fotos.map((foto, i) => `<img src="${API_BASE_URL}${escaparTextoPainel(foto)}" alt="Foto ${i + 1} de ${escaparTextoPainel(e.nome_equipamento)}">`).join('')}</div></details></td><td>${Number(e.admin_visivel) ? 'Visível' : 'Oculto'}</td><td>${botaoAdminRotulo(Number(e.admin_visivel), 'equipamento', e.id_equipamento, 'visivel')} ${Number(e.admin_visivel) ? `<button class="admin-acao admin-acao-perigo" onclick="excluirAnuncioAdmin(${Number(e.id_equipamento)})">Excluir</button>` : ''}</td></tr>`).join(''), secao);
+        } else if (secao === 'admin-avaliacoes') {
+            const { avaliacoes } = await requisicaoAdmin('/api/admin/avaliacoes');
+            conteudo.innerHTML = `<h2 class="titulo-secao-painel">Moderar avaliações</h2><div class="admin-tabela-wrap"><table class="admin-tabela"><thead><tr><th>Data</th><th>Cliente</th><th>Alvo</th><th>Avaliação</th><th>Comentário</th><th>Status</th><th>Ação</th></tr></thead><tbody>${avaliacoes.map(a => `<tr><td>${new Date(a.data_criacao).toLocaleDateString('pt-BR')}</td><td>${escaparTextoPainel(a.nome_cliente)}</td><td>${escaparTextoPainel(a.alvo === 'PRESTADOR' ? a.nome_prestador : a.nome_equipamento)}</td><td>${a.nota == null ? 'Sem estrelas' : `${a.nota}/5`}</td><td>${escaparTextoPainel(a.comentario || '—')}</td><td>${a.moderacao_status === 'VISIVEL' ? 'Visível' : 'Oculta'}</td><td>${botaoAdminRotulo(a.moderacao_status === 'VISIVEL', 'avaliacao', `${a.fonte}:${a.id_avaliacao}`, 'visivel')}</td></tr>`).join('')}</tbody></table></div>`;
+        }
+    } catch (erro) {
+        conteudo.innerHTML = `<div class="admin-erro"><h2>Não foi possível carregar esta área</h2><p>${escaparTextoPainel(erro.message)}</p><button class="btn-primary" onclick="carregarSecaoAdmin('${secao}')">Tentar novamente</button></div>`;
+    }
+}
+
+async function excluirAnuncioAdmin(id) {
+    if (!confirm('Excluir este anúncio? Ele será ocultado e o histórico das solicitações continuará preservado.')) return;
+    try {
+        await requisicaoAdmin(`/api/admin/equipamentos/${id}`, { method: 'DELETE' });
+        carregarSecaoAdmin('admin-equipamentos');
+    } catch (erro) { alert(erro.message); }
 }
 
 // Fecha o painel

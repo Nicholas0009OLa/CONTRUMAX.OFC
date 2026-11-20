@@ -24,8 +24,31 @@ function autenticar(req, res, next) {
     if (!idUsuario) {
         return res.status(401).json({ sucesso: false, mensagem: 'Faça login novamente para continuar.' });
     }
-    req.usuarioAutenticado = { id_usuario: idUsuario };
-    next();
+    db.query('SELECT ativo FROM usuarios WHERE id_usuario = ? LIMIT 1', [idUsuario], (erro, resultado) => {
+        if (erro) {
+            console.error('ERRO AO VALIDAR SESSÃO:', erro.message);
+            return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível validar sua sessão.' });
+        }
+        if (!resultado[0] || Number(resultado[0].ativo) !== 1) {
+            sessoes.delete(token);
+            return res.status(403).json({ sucesso: false, mensagem: 'Esta conta está suspensa ou não existe.' });
+        }
+        req.usuarioAutenticado = { id_usuario: idUsuario };
+        next();
+    });
+}
+
+function autorizarAdmin(req, res, next) {
+    db.query('SELECT tipo_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1', [req.usuarioAutenticado.id_usuario], (erro, resultado) => {
+        if (erro) {
+            console.error('ERRO AO VALIDAR ADMINISTRADOR:', erro.message);
+            return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível validar a permissão.' });
+        }
+        if (!resultado[0] || resultado[0].tipo_usuario !== 'ADMIN') {
+            return res.status(403).json({ sucesso: false, mensagem: 'Acesso exclusivo para administradores.' });
+        }
+        next();
+    });
 }
 
 const pastaUploads = path.join(__dirname, 'uploads', 'equipamentos');
@@ -128,10 +151,11 @@ app.get('/', (req, res) => {
 // LISTAR USUÁRIOS
 // ===============================
 
-app.get('/usuarios', (req, res) => {
+app.get('/usuarios', autenticar, autorizarAdmin, (req, res) => {
 
     db.query(
-        'SELECT * FROM usuarios',
+        `SELECT id_usuario, nome, email, telefone, tipo_usuario, ativo, data_cadastro
+         FROM usuarios ORDER BY id_usuario DESC LIMIT 200`,
         (erro, resultado) => {
 
             if (erro) {
@@ -532,7 +556,8 @@ app.post('/login', (req, res) => {
             nome,
             email,
             telefone,
-            tipo_usuario
+            tipo_usuario,
+            ativo
          FROM usuarios
          WHERE email = ?
          AND senha = ?`,
@@ -563,7 +588,8 @@ app.post('/login', (req, res) => {
             );
 
 
-            if (resultado.length > 0) {
+            if (resultado.length > 0 && Number(resultado[0].ativo) === 1) {
+                delete resultado[0].ativo;
 
                 res.json({
                     sucesso: true,
@@ -631,9 +657,9 @@ app.get('/prestadores', (req, res) => {
             u.nome,
             u.telefone,
             (SELECT AVG(av.nota) FROM avaliacoes_solicitacoes av
-             WHERE av.id_prestador = p.id_prestador AND av.alvo = 'PRESTADOR' AND av.nota IS NOT NULL) AS nota_media_avaliacoes,
+             WHERE av.id_prestador = p.id_prestador AND av.alvo = 'PRESTADOR' AND av.nota IS NOT NULL AND av.moderacao_status = 'VISIVEL') AS nota_media_avaliacoes,
             (SELECT COUNT(*) FROM avaliacoes_solicitacoes av
-             WHERE av.id_prestador = p.id_prestador AND av.alvo = 'PRESTADOR' AND av.nota IS NOT NULL) AS total_notas_avaliacoes,
+             WHERE av.id_prestador = p.id_prestador AND av.alvo = 'PRESTADOR' AND av.nota IS NOT NULL AND av.moderacao_status = 'VISIVEL') AS total_notas_avaliacoes,
             (
                 SELECT GROUP_CONCAT(DISTINCT e.nome SEPARATOR '|||')
                 FROM prestador_especialidade pe
@@ -655,7 +681,7 @@ app.get('/prestadores', (req, res) => {
 
         INNER JOIN usuarios u
             ON p.id_usuario = u.id_usuario
-        ${filtros.length ? `WHERE ${filtros.join(' AND ')}` : ''}
+        ${filtros.length ? `WHERE ${filtros.join(' AND ')} AND p.admin_ativo = 1 AND u.ativo = 1` : 'WHERE p.admin_ativo = 1 AND u.ativo = 1'}
         ORDER BY p.id_prestador DESC
         `,
         parametros,
@@ -710,9 +736,9 @@ app.get('/equipamentos', (req, res) => {
             MAX(p.cidade) AS cidade,
             MAX(p.estado) AS estado,
             (SELECT AVG(av.nota) FROM avaliacoes_solicitacoes av
-             WHERE av.id_equipamento = e.id_equipamento AND av.alvo = 'EQUIPAMENTO' AND av.nota IS NOT NULL) AS nota_media_avaliacoes,
+             WHERE av.id_equipamento = e.id_equipamento AND av.alvo = 'EQUIPAMENTO' AND av.nota IS NOT NULL AND av.moderacao_status = 'VISIVEL') AS nota_media_avaliacoes,
             (SELECT COUNT(*) FROM avaliacoes_solicitacoes av
-             WHERE av.id_equipamento = e.id_equipamento AND av.alvo = 'EQUIPAMENTO' AND av.nota IS NOT NULL) AS total_notas_avaliacoes,
+             WHERE av.id_equipamento = e.id_equipamento AND av.alvo = 'EQUIPAMENTO' AND av.nota IS NOT NULL AND av.moderacao_status = 'VISIVEL') AS total_notas_avaliacoes,
             GROUP_CONCAT(
                 DISTINCT f.url_foto
                 ORDER BY f.id_foto
@@ -730,6 +756,7 @@ app.get('/equipamentos', (req, res) => {
         LEFT JOIN fotos_equipamentos f
             ON e.id_equipamento = f.id_equipamento
 
+        WHERE e.admin_visivel = 1 AND u.ativo = 1 AND p.admin_ativo = 1
         GROUP BY e.id_equipamento
 
         ORDER BY e.id_equipamento DESC
@@ -1263,13 +1290,13 @@ app.post('/conversas', autenticar, async (req, res) => {
         }
 
         const prestadores = await consultar(
-            `SELECT p.id_usuario, u.tipo_usuario
+            `SELECT p.id_usuario, p.admin_ativo, u.tipo_usuario, u.ativo
              FROM prestadores p
              INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
              WHERE p.id_prestador = ? LIMIT 1`,
             [idPrestador]
         );
-        if (!prestadores[0]) return res.status(404).json({ sucesso: false, mensagem: 'Profissional não encontrado.' });
+        if (!prestadores[0] || Number(prestadores[0].admin_ativo) !== 1 || Number(prestadores[0].ativo) !== 1) return res.status(404).json({ sucesso: false, mensagem: 'Profissional não encontrado.' });
         const idUsuarioPrestador = Number(prestadores[0].id_usuario);
         if (idUsuarioPrestador === idUsuario || String(prestadores[0].tipo_usuario).toUpperCase() !== 'PRESTADOR') {
             return res.status(400).json({ sucesso: false, mensagem: 'Não é possível iniciar conversa com este perfil.' });
@@ -1572,12 +1599,12 @@ app.post('/solicitacoes', autenticar, async (req, res) => {
         if (tipo === 'SERVICO') {
             const prestadores = await consultarNaConexao(
                 conexao,
-                `SELECT p.id_prestador, p.id_usuario, u.tipo_usuario
+                `SELECT p.id_prestador, p.id_usuario, p.admin_ativo, u.tipo_usuario, u.ativo
                  FROM prestadores p INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
                  WHERE p.id_prestador = ? LIMIT 1`,
                 [idPrestador]
             );
-            if (!prestadores[0] || String(prestadores[0].tipo_usuario).toUpperCase() !== 'PRESTADOR') {
+            if (!prestadores[0] || String(prestadores[0].tipo_usuario).toUpperCase() !== 'PRESTADOR' || Number(prestadores[0].admin_ativo) !== 1 || Number(prestadores[0].ativo) !== 1) {
                 await conexao.rollback(); transacaoAtiva = false;
                 return res.status(404).json({ sucesso: false, mensagem: 'Profissional não encontrado.' });
             }
@@ -1589,7 +1616,7 @@ app.post('/solicitacoes', autenticar, async (req, res) => {
             const equipamentos = await consultarNaConexao(
                 conexao,
                 `SELECT e.id_equipamento, e.id_prestador, e.nome_equipamento, e.quantidade,
-                        e.disponivel, e.valor_diaria, p.id_usuario, u.tipo_usuario
+                        e.disponivel, e.admin_visivel, e.valor_diaria, p.id_usuario, p.admin_ativo, u.ativo, u.tipo_usuario
                  FROM equipamentos e
                  INNER JOIN prestadores p ON p.id_prestador = e.id_prestador
                  INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
@@ -1601,7 +1628,7 @@ app.post('/solicitacoes', autenticar, async (req, res) => {
                 return res.status(404).json({ sucesso: false, mensagem: 'Equipamento não encontrado.' });
             }
             const equipamento = equipamentos[0];
-            if (String(equipamento.tipo_usuario).toUpperCase() !== 'PRESTADOR') {
+            if (String(equipamento.tipo_usuario).toUpperCase() !== 'PRESTADOR' || Number(equipamento.admin_visivel) !== 1 || Number(equipamento.admin_ativo) !== 1 || Number(equipamento.ativo) !== 1) {
                 await conexao.rollback(); transacaoAtiva = false;
                 return res.status(404).json({ sucesso: false, mensagem: 'Equipamento não encontrado.' });
             }
@@ -1937,14 +1964,14 @@ app.get('/prestadores/:id/avaliacoes', async (req, res) => {
              FROM avaliacoes_solicitacoes a
              INNER JOIN usuarios u ON u.id_usuario = a.id_cliente
              LEFT JOIN equipamentos e ON e.id_equipamento = a.id_equipamento
-             WHERE a.id_prestador = ?
+             WHERE a.id_prestador = ? AND a.moderacao_status = 'VISIVEL'
              ORDER BY a.data_criacao DESC, a.id_avaliacao DESC LIMIT 50`,
             [idPrestador]
         );
         const [resumo] = await consultar(
             `SELECT COUNT(*) AS quantidade_comentarios, COUNT(CASE WHEN alvo = 'PRESTADOR' THEN nota END) AS quantidade_notas,
                     AVG(CASE WHEN alvo = 'PRESTADOR' THEN nota END) AS media
-             FROM avaliacoes_solicitacoes WHERE id_prestador = ?`,
+             FROM avaliacoes_solicitacoes WHERE id_prestador = ? AND moderacao_status = 'VISIVEL'`,
             [idPrestador]
         );
         return res.json({ sucesso: true, avaliacoes, resumo });
@@ -1963,13 +1990,13 @@ app.get('/equipamentos/:id/avaliacoes', async (req, res) => {
         const avaliacoes = await consultar(
             `SELECT a.id_avaliacao, a.nota, a.comentario, a.data_criacao, u.nome AS nome_cliente
              FROM avaliacoes_solicitacoes a INNER JOIN usuarios u ON u.id_usuario = a.id_cliente
-             WHERE a.id_equipamento = ? AND a.alvo = 'EQUIPAMENTO'
+             WHERE a.id_equipamento = ? AND a.alvo = 'EQUIPAMENTO' AND a.moderacao_status = 'VISIVEL'
              ORDER BY a.data_criacao DESC, a.id_avaliacao DESC LIMIT 50`,
             [idEquipamento]
         );
         const [resumo] = await consultar(
             `SELECT COUNT(*) AS quantidade_comentarios, COUNT(nota) AS quantidade_notas, AVG(nota) AS media
-             FROM avaliacoes_solicitacoes WHERE id_equipamento = ? AND alvo = 'EQUIPAMENTO'`,
+             FROM avaliacoes_solicitacoes WHERE id_equipamento = ? AND alvo = 'EQUIPAMENTO' AND moderacao_status = 'VISIVEL'`,
             [idEquipamento]
         );
         return res.json({ sucesso: true, avaliacoes, resumo });
@@ -2018,6 +2045,204 @@ app.get('/notificacoes/resumo', autenticar, async (req, res) => {
     } catch (erro) {
         console.error('ERRO AO CONTAR NOTIFICAÇÕES:', erro);
         return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar as notificações.' });
+    }
+});
+
+// ===============================
+// PAINEL ADMINISTRATIVO
+// ===============================
+
+app.get('/api/admin/dashboard', autenticar, autorizarAdmin, async (req, res) => {
+    try {
+        const [usuarios, clientes, prestadores, equipamentos, solicitacoes] = await Promise.all([
+            consultar('SELECT COUNT(*) AS total FROM usuarios'),
+            consultar("SELECT COUNT(*) AS total FROM usuarios WHERE tipo_usuario = 'CLIENTE'"),
+            consultar("SELECT COUNT(*) AS total FROM usuarios WHERE tipo_usuario = 'PRESTADOR'"),
+            consultar('SELECT COUNT(*) AS total FROM equipamentos'),
+            consultar('SELECT COUNT(*) AS total FROM solicitacoes')
+        ]);
+        return res.json({ sucesso: true, indicadores: {
+            usuarios: Number(usuarios[0].total), clientes: Number(clientes[0].total),
+            prestadores: Number(prestadores[0].total), equipamentos: Number(equipamentos[0].total),
+            solicitacoes: Number(solicitacoes[0].total)
+        }});
+    } catch (erro) {
+        console.error('ERRO DASHBOARD ADMIN:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar o dashboard.' });
+    }
+});
+
+app.get('/api/admin/usuarios', autenticar, autorizarAdmin, async (req, res) => {
+    try {
+        const busca = String(req.query.busca || '').trim().slice(0, 100);
+        const filtro = busca ? 'WHERE nome LIKE ? OR email LIKE ?' : '';
+        const params = busca ? [`%${busca}%`, `%${busca}%`] : [];
+        const usuarios = await consultar(
+            `SELECT id_usuario, nome, email, telefone, tipo_usuario, ativo, data_cadastro
+             FROM usuarios ${filtro} ORDER BY id_usuario DESC LIMIT 200`, params);
+        return res.json({ sucesso: true, usuarios });
+    } catch (erro) {
+        console.error('ERRO USUARIOS ADMIN:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar os usuários.' });
+    }
+});
+
+app.patch('/api/admin/usuarios/:id/status', autenticar, autorizarAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    const ativo = req.body.ativo;
+    if (!Number.isSafeInteger(id) || id <= 0 || ![0, 1, false, true].includes(ativo))
+        return res.status(400).json({ sucesso: false, mensagem: 'Usuário ou status inválido.' });
+    try {
+        const [alvo] = await consultar('SELECT id_usuario, tipo_usuario, ativo FROM usuarios WHERE id_usuario = ? LIMIT 1', [id]);
+        if (!alvo) return res.status(404).json({ sucesso: false, mensagem: 'Usuário não encontrado.' });
+        if (id === req.usuarioAutenticado.id_usuario && !Boolean(ativo))
+            return res.status(400).json({ sucesso: false, mensagem: 'Você não pode suspender a própria conta.' });
+        if (alvo.tipo_usuario === 'ADMIN')
+            return res.status(400).json({ sucesso: false, mensagem: 'Contas administrativas não podem ser suspensas por este painel.' });
+        await consultar('UPDATE usuarios SET ativo = ? WHERE id_usuario = ?', [Number(Boolean(ativo)), id]);
+        return res.json({ sucesso: true, ativo: Number(Boolean(ativo)) });
+    } catch (erro) {
+        console.error('ERRO STATUS USUARIO:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível atualizar o usuário.' });
+    }
+});
+
+app.get('/api/admin/prestadores', autenticar, autorizarAdmin, async (req, res) => {
+    try {
+        const busca = String(req.query.busca || '').trim().slice(0, 100);
+        const filtro = busca ? 'AND (u.nome LIKE ? OR u.email LIKE ? OR p.profissao LIKE ?)' : '';
+        const params = busca ? [`%${busca}%`, `%${busca}%`, `%${busca}%`] : [];
+        const prestadores = await consultar(
+            `SELECT p.id_prestador, p.id_usuario, p.profissao, p.cidade, p.estado, p.verificado,
+                    p.descricao, p.valor_diaria, p.admin_ativo, u.nome, u.email, u.telefone,
+                    (SELECT COUNT(*) FROM equipamentos e WHERE e.id_prestador = p.id_prestador) AS total_equipamentos
+             FROM prestadores p INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+             WHERE 1=1 ${filtro} ORDER BY p.id_prestador DESC LIMIT 200`, params);
+        return res.json({ sucesso: true, prestadores });
+    } catch (erro) {
+        console.error('ERRO PRESTADORES ADMIN:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar os prestadores.' });
+    }
+});
+
+app.patch('/api/admin/prestadores/:id/status', autenticar, autorizarAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    const ativo = req.body.ativo;
+    if (!Number.isSafeInteger(id) || id <= 0 || ![0, 1, false, true].includes(ativo))
+        return res.status(400).json({ sucesso: false, mensagem: 'Prestador ou status inválido.' });
+    try {
+        const [alvo] = await consultar('SELECT id_usuario FROM prestadores WHERE id_prestador = ? LIMIT 1', [id]);
+        if (!alvo) return res.status(404).json({ sucesso: false, mensagem: 'Prestador não encontrado.' });
+        if (Number(alvo.id_usuario) === req.usuarioAutenticado.id_usuario)
+            return res.status(400).json({ sucesso: false, mensagem: 'Você não pode suspender o próprio perfil.' });
+        await consultar('UPDATE prestadores SET admin_ativo = ? WHERE id_prestador = ?', [Number(Boolean(ativo)), id]);
+        return res.json({ sucesso: true, ativo: Number(Boolean(ativo)) });
+    } catch (erro) {
+        console.error('ERRO STATUS PRESTADOR:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível atualizar o prestador.' });
+    }
+});
+
+app.get('/api/admin/equipamentos', autenticar, autorizarAdmin, async (req, res) => {
+    try {
+        const busca = String(req.query.busca || '').trim().slice(0, 100);
+        const filtro = busca ? 'AND (e.nome_equipamento LIKE ? OR e.tipo_equipamento LIKE ? OR u.nome LIKE ?)' : '';
+        const params = busca ? [`%${busca}%`, `%${busca}%`, `%${busca}%`] : [];
+        const equipamentos = await consultar(
+            `SELECT e.id_equipamento, e.nome_equipamento, e.tipo_equipamento, e.descricao,
+                    e.valor_diaria, e.quantidade, e.disponivel, e.admin_visivel,
+                    MAX(p.id_prestador) AS id_prestador, MAX(u.nome) AS nome_prestador, MAX(u.email) AS email_prestador,
+                    GROUP_CONCAT(DISTINCT f.url_foto ORDER BY f.id_foto SEPARATOR '|||') AS fotos
+             FROM equipamentos e INNER JOIN prestadores p ON p.id_prestador = e.id_prestador
+             INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+             LEFT JOIN fotos_equipamentos f ON f.id_equipamento = e.id_equipamento
+             WHERE 1=1 ${filtro} GROUP BY e.id_equipamento ORDER BY e.id_equipamento DESC LIMIT 200`, params);
+        return res.json({ sucesso: true, equipamentos: equipamentos.map(e => ({ ...e, fotos: e.fotos ? e.fotos.split('|||') : [] })) });
+    } catch (erro) {
+        console.error('ERRO EQUIPAMENTOS ADMIN:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar os anúncios.' });
+    }
+});
+
+app.patch('/api/admin/equipamentos/:id/status', autenticar, autorizarAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    const visivel = req.body.visivel;
+    if (!Number.isSafeInteger(id) || id <= 0 || ![0, 1, false, true].includes(visivel))
+        return res.status(400).json({ sucesso: false, mensagem: 'Anúncio ou status inválido.' });
+    try {
+        const resultado = await consultar('UPDATE equipamentos SET admin_visivel = ? WHERE id_equipamento = ?', [Number(Boolean(visivel)), id]);
+        if (!resultado.affectedRows) return res.status(404).json({ sucesso: false, mensagem: 'Anúncio não encontrado.' });
+        return res.json({ sucesso: true, visivel: Number(Boolean(visivel)) });
+    } catch (erro) {
+        console.error('ERRO STATUS EQUIPAMENTO:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível atualizar o anúncio.' });
+    }
+});
+
+// Exclusão administrativa é lógica: mantém solicitações e histórico do equipamento.
+app.delete('/api/admin/equipamentos/:id', autenticar, autorizarAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ sucesso: false, mensagem: 'Anúncio inválido.' });
+    try {
+        const resultado = await consultar('UPDATE equipamentos SET admin_visivel = 0 WHERE id_equipamento = ?', [id]);
+        if (!resultado.affectedRows) return res.status(404).json({ sucesso: false, mensagem: 'Anúncio não encontrado.' });
+        return res.json({ sucesso: true, removido: true });
+    } catch (erro) {
+        console.error('ERRO EXCLUSAO LOGICA EQUIPAMENTO:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível remover o anúncio.' });
+    }
+});
+
+app.get('/api/admin/avaliacoes', autenticar, autorizarAdmin, async (req, res) => {
+    try {
+        const [avaliacoesNovas, avaliacoesLegadas] = await Promise.all([consultar(
+            `SELECT a.id_avaliacao, a.alvo, a.nota, a.comentario, a.data_criacao, a.moderacao_status,
+                    u.nome AS nome_cliente, p.id_prestador, up.nome AS nome_prestador,
+                    e.id_equipamento, e.nome_equipamento, 'NOVA' AS fonte
+             FROM avaliacoes_solicitacoes a
+             LEFT JOIN usuarios u ON u.id_usuario = a.id_cliente
+             LEFT JOIN prestadores p ON p.id_prestador = a.id_prestador
+             LEFT JOIN usuarios up ON up.id_usuario = p.id_usuario
+             LEFT JOIN equipamentos e ON e.id_equipamento = a.id_equipamento
+             ORDER BY a.data_criacao DESC LIMIT 200`), consultar(
+            `SELECT a.id_avaliacao, 'PRESTADOR' AS alvo, a.nota, a.comentario,
+                    a.data_avaliacao AS data_criacao, a.moderacao_status,
+                    uc.nome AS nome_cliente, p.id_prestador, up.nome AS nome_prestador,
+                    NULL AS id_equipamento,
+                    (SELECT MAX(COALESCE(s.nome_servico, e.nome_equipamento))
+                     FROM itens_pedido ip
+                     LEFT JOIN servicos s ON s.id_servico = ip.id_servico
+                     LEFT JOIN equipamentos e ON e.id_equipamento = ip.id_equipamento
+                     WHERE ip.id_pedido = pd.id_pedido) AS nome_equipamento,
+                    'LEGADA' AS fonte
+             FROM avaliacoes a
+             INNER JOIN pedidos pd ON pd.id_pedido = a.id_pedido
+             INNER JOIN usuarios uc ON uc.id_usuario = pd.id_cliente
+             INNER JOIN prestadores p ON p.id_prestador = pd.id_prestador
+             INNER JOIN usuarios up ON up.id_usuario = p.id_usuario
+             ORDER BY a.data_avaliacao DESC LIMIT 200`)]);
+        const avaliacoes = [...avaliacoesNovas, ...avaliacoesLegadas]
+            .sort((a, b) => new Date(b.data_criacao) - new Date(a.data_criacao));
+        return res.json({ sucesso: true, avaliacoes });
+    } catch (erro) {
+        console.error('ERRO AVALIACOES ADMIN:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar as avaliações.' });
+    }
+});
+
+app.patch('/api/admin/avaliacoes/:id/status', autenticar, autorizarAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    const visivel = req.body.visivel;
+    if (!Number.isSafeInteger(id) || id <= 0 || ![0, 1, false, true].includes(visivel))
+        return res.status(400).json({ sucesso: false, mensagem: 'Avaliação ou status inválido.' });
+    try {
+        const tabela = req.body.fonte === 'LEGADA' ? 'avaliacoes' : 'avaliacoes_solicitacoes';
+        const resultado = await consultar(`UPDATE ${tabela} SET moderacao_status = ? WHERE id_avaliacao = ?`, [visivel ? 'VISIVEL' : 'OCULTA', id]);
+        if (!resultado.affectedRows) return res.status(404).json({ sucesso: false, mensagem: 'Avaliação não encontrada.' });
+        return res.json({ sucesso: true, visivel: Number(Boolean(visivel)) });
+    } catch (erro) {
+        console.error('ERRO MODERACAO AVALIACAO:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível moderar a avaliação.' });
     }
 });
 
