@@ -32,6 +32,30 @@
     font-size: 18px; font-weight: 900; color: var(--black);
     font-family: 'Barlow Condensed', sans-serif;
   }
+  .logo-icon-header {
+    width: 57px;
+    height: 38px;
+    flex: 0 0 auto;
+    object-fit: contain;
+    clip-path: none;
+    background: transparent;
+  }
+  .logo-icon-modal {
+    width: 48px;
+    height: 32px;
+    flex: 0 0 auto;
+    object-fit: contain;
+    clip-path: none;
+    background: transparent;
+  }
+  .logo-icon-footer {
+    width: 57px;
+    height: 38px;
+    flex: 0 0 auto;
+    object-fit: contain;
+    clip-path: none;
+    background: transparent;
+  }
   .logo-text { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: 1px; color: var(--white); line-height: 1; }
   .logo-text span { color: var(--yellow); }
   .logo-sub { font-size: 9px; font-weight: 400; letter-spacing: 2px; color: var(--gray); display: block; }
@@ -1489,6 +1513,7 @@ body.perfil-aberto { overflow: hidden; }
     nav { padding-right: 3%; padding-left: 3%; }
     .logo { gap: 6px; }
     .logo-icon { width: 32px; height: 32px; font-size: 15px; }
+    .logo-icon-header { width: 48px; height: 32px; }
     .logo-text { font-size: 18px; }
     .logo-sub { font-size: 7px; letter-spacing: 1.5px; }
     .nav-right { gap: 5px; }
