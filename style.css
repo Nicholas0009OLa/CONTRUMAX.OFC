@@ -125,6 +125,11 @@
   .modal-panel { display: none; }
   .modal-panel.active { display: block; }
 
+  #previewFotosPrestador { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .foto-cadastro-preview { position: relative; width: 88px; height: 76px; border: 1px solid #444; border-radius: 6px; overflow: hidden; }
+  .foto-cadastro-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .foto-cadastro-preview button { position: absolute; top: 4px; right: 4px; width: 23px; height: 23px; border: 0; border-radius: 50%; background: rgba(0,0,0,.82); color: #fff; font-size: 17px; line-height: 1; cursor: pointer; }
+
   .mform-group { margin-bottom: 16px; }
   .mform-group label { display: block; font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
   .mform-group input, .mform-group select {
@@ -1032,6 +1037,38 @@
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 18px;
+}
+
+.perfil-conta-resumo { display: flex; align-items: flex-start; gap: 20px; }
+.perfil-conta-foto { width: 88px; height: 88px; flex: 0 0 88px; border: 1px solid #3b3b3b; border-radius: 50%; object-fit: cover; background: #202020; }
+.perfil-conta-iniciais { display: grid; place-items: center; color: var(--yellow); font-size: 25px; font-weight: 700; }
+.btn-editar-perfil { margin-top: 22px; }
+.form-editar-perfil { display: grid; gap: 18px; max-width: 780px; }
+.editor-perfil-foto-linha { display: flex; align-items: center; gap: 18px; padding: 16px; border: 1px solid #333; border-radius: 8px; background: #181818; }
+.editor-perfil-foto { width: 92px; height: 92px; flex: 0 0 92px; object-fit: cover; border: 1px solid #444; border-radius: 50%; background: #222; }
+.editor-perfil-iniciais { display: grid; place-items: center; color: var(--yellow); font-size: 27px; font-weight: 700; }
+.campo-perfil-arquivo, .campo-editar-perfil { display: grid; gap: 8px; color: #ddd; font-size: 13px; font-weight: 600; }
+.campo-perfil-arquivo input, .campo-editar-perfil input, .campo-editar-perfil textarea { box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid #3d3d3d; border-radius: 5px; background: #202020; color: #eee; font: 13px 'Inter', sans-serif; }
+.campo-perfil-arquivo input { max-width: 100%; padding: 9px; }
+.campo-editar-perfil textarea { resize: vertical; line-height: 1.5; }
+.campo-perfil-arquivo small { color: #999; font-size: 11px; font-weight: 400; }
+.editor-fotos-trabalho { display: grid; gap: 12px; padding: 18px; border: 1px solid #333; border-radius: 8px; background: #181818; }
+.editor-fotos-trabalho h3 { color: #fff; }
+.editor-fotos-trabalho > p { color: #999; font-size: 12px; line-height: 1.5; }
+#editorFotosExistentes, #editorNovasFotos { display: flex; flex-wrap: wrap; gap: 10px; }
+.foto-perfil-item { display: grid; gap: 7px; width: 132px; padding: 8px; border: 1px solid #383838; border-radius: 7px; background: #202020; }
+.foto-perfil-item img { width: 100%; height: 92px; object-fit: cover; border-radius: 4px; }
+.foto-perfil-item button { min-height: 34px; padding: 6px; border: 1px solid #555; border-radius: 5px; background: transparent; color: #ddd; font-size: 11px; cursor: pointer; }
+.foto-perfil-item button:hover, .foto-perfil-remover button { border-color: #db7777; color: #ff9a9a; }
+.foto-perfil-remover { opacity: .65; }
+.contador-fotos-perfil { color: var(--yellow) !important; }
+.acoes-editar-perfil { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+
+@media (max-width: 650px) {
+    .perfil-conta-resumo { flex-direction: column; }
+    .dados-conta-painel { width: 100%; grid-template-columns: 1fr; }
+    .editor-perfil-foto-linha { align-items: flex-start; flex-direction: column; }
+    .foto-perfil-item { width: calc(50% - 5px); }
 }
 
 .campo-conta-painel {

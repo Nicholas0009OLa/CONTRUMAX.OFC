@@ -24,7 +24,7 @@ function autenticar(req, res, next) {
     if (!idUsuario) {
         return res.status(401).json({ sucesso: false, mensagem: 'Faça login novamente para continuar.' });
     }
-    db.query('SELECT ativo FROM usuarios WHERE id_usuario = ? LIMIT 1', [idUsuario], (erro, resultado) => {
+    db.query('SELECT ativo, tipo_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1', [idUsuario], (erro, resultado) => {
         if (erro) {
             console.error('ERRO AO VALIDAR SESSÃO:', erro.message);
             return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível validar sua sessão.' });
@@ -33,7 +33,7 @@ function autenticar(req, res, next) {
             sessoes.delete(token);
             return res.status(403).json({ sucesso: false, mensagem: 'Esta conta está suspensa ou não existe.' });
         }
-        req.usuarioAutenticado = { id_usuario: idUsuario };
+        req.usuarioAutenticado = { id_usuario: idUsuario, tipo_usuario: resultado[0].tipo_usuario };
         next();
     });
 }
@@ -51,7 +51,8 @@ function autorizarAdmin(req, res, next) {
     });
 }
 
-const pastaUploads = path.join(__dirname, 'uploads', 'equipamentos');
+const pastaUploadsBase = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, 'uploads'));
+const pastaUploads = path.join(pastaUploadsBase, 'equipamentos');
 
 if (!fs.existsSync(pastaUploads)) {
     fs.mkdirSync(pastaUploads, { recursive: true });
@@ -93,7 +94,7 @@ const upload = multer({
     }
 });
 
-const pastaUploadsPrestadores = path.join(__dirname, 'uploads', 'prestadores');
+const pastaUploadsPrestadores = path.join(pastaUploadsBase, 'prestadores');
 
 if (!fs.existsSync(pastaUploadsPrestadores)) {
     fs.mkdirSync(pastaUploadsPrestadores, { recursive: true });
@@ -117,7 +118,7 @@ const storagePrestadores = multer.diskStorage({
 const uploadPrestadores = multer({
     storage: storagePrestadores,
     limits: {
-        files: 5,
+        files: 6,
         fileSize: 5 * 1024 * 1024
     },
     fileFilter: function (req, file, cb) {
@@ -129,13 +130,79 @@ const uploadPrestadores = multer({
     }
 });
 
+function arquivosRecebidos(req) {
+    if (Array.isArray(req.files)) return req.files;
+    return Object.values(req.files || {}).flat();
+}
+
+function removerUploadsRecebidos(req) {
+    arquivosRecebidos(req).forEach(arquivo => {
+        if (arquivo?.path && fs.existsSync(arquivo.path)) fs.unlinkSync(arquivo.path);
+    });
+}
+
+function caminhoFotoPrestador(url) {
+    const nome = path.basename(String(url || ''));
+    if (!/^\d+-\d+\.[a-z0-9]+$/i.test(nome)) return null;
+    const caminho = path.join(pastaUploadsPrestadores, nome);
+    return path.dirname(caminho) === pastaUploadsPrestadores ? caminho : null;
+}
+
+function removerArquivoFotoPrestador(url) {
+    const caminho = caminhoFotoPrestador(url);
+    if (caminho && fs.existsSync(caminho)) fs.unlinkSync(caminho);
+}
+
+async function removerFotoPrestadorSeSemReferencias(url) {
+    if (!caminhoFotoPrestador(url)) return;
+    const referencias = await consultar(
+        `SELECT
+            (SELECT COUNT(*) FROM usuarios WHERE foto_perfil = ?) +
+            (SELECT COUNT(*) FROM prestadores WHERE foto = ?) +
+            (SELECT COUNT(*) FROM fotos_prestadores WHERE url_foto = ?) AS total`,
+        [url, url, url]
+    );
+    if (Number(referencias[0]?.total) === 0) removerArquivoFotoPrestador(url);
+}
+
+function uploadCamposPerfil(req, res, next) {
+    uploadPrestadores.fields([
+        { name: 'foto_perfil', maxCount: 1 },
+        { name: 'fotos_trabalhos', maxCount: 5 }
+    ])(req, res, erro => {
+        if (erro) {
+            const mensagem = erro.code === 'LIMIT_FILE_SIZE'
+                ? 'Cada imagem deve ter no máximo 5 MB.'
+                : erro.code === 'LIMIT_UNEXPECTED_FILE'
+                    ? 'O limite de cinco fotos de trabalhos ou uma foto de perfil foi excedido.'
+                    : erro.message || 'Não foi possível receber as imagens.';
+            return res.status(400).json({ sucesso: false, mensagem });
+        }
+        next();
+    });
+}
+
+function uploadFotosCadastroPrestador(req, res, next) {
+    uploadPrestadores.array('fotos', 5)(req, res, erro => {
+        if (erro) {
+            const mensagem = erro.code === 'LIMIT_FILE_SIZE'
+                ? 'Cada imagem deve ter no máximo 5 MB.'
+                : erro.code === 'LIMIT_UNEXPECTED_FILE'
+                    ? 'O cadastro aceita no máximo cinco fotos de trabalhos.'
+                    : erro.message || 'Não foi possível receber as imagens.';
+            return res.status(400).json({ sucesso: false, mensagem });
+        }
+        next();
+    });
+}
+
 
 app.use(cors());
 app.use(express.json());
 
 app.use(
     '/uploads',
-    express.static(path.join(__dirname, 'uploads'))
+    express.static(pastaUploadsBase)
 );
 
 // ===============================
@@ -332,7 +399,13 @@ app.post('/cadastro', (req, res) => {
 // ===============================
 
 
-app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) => {
+app.post('/cadastro-prestador', autenticar, uploadFotosCadastroPrestador, (req, res) => {
+    const idUsuarioEnviado = Number(req.body?.id_usuario);
+    if (req.usuarioAutenticado.tipo_usuario !== 'PRESTADOR' ||
+        !Number.isSafeInteger(idUsuarioEnviado) || idUsuarioEnviado !== req.usuarioAutenticado.id_usuario) {
+        removerUploadsRecebidos(req);
+        return res.status(403).json({ sucesso: false, mensagem: 'Acesso não autorizado para cadastrar este perfil profissional.' });
+    }
     if (!req.body) {
         return res.status(400).json({
             sucesso: false,
@@ -351,9 +424,11 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
     } = req.body;
 
     if (!validarDocumentoCpfCnpj(cpf_cnpj)) {
+        removerUploadsRecebidos(req);
         return res.status(400).json({ sucesso: false, mensagem: 'Informe um CPF ou CNPJ completo e válido.' });
     }
     if (!String(profissao || '').trim() || !String(cidade || '').trim() || !String(estado || '').trim()) {
+        removerUploadsRecebidos(req);
         return res.status(400).json({ sucesso: false, mensagem: 'Informe profissão, cidade e estado.' });
     }
     const cpfCnpjNormalizado = String(cpf_cnpj).replace(/\D/g, '');
@@ -365,6 +440,7 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
         (erroBusca, resultadoBusca) => {
 
             if (erroBusca) {
+                removerUploadsRecebidos(req);
                 console.log("ERRO AO BUSCAR PRESTADOR:", erroBusca);
 
                 return res.status(500).json({
@@ -374,6 +450,7 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
             }
 
             if (resultadoBusca.length > 0) {
+                removerUploadsRecebidos(req);
                 return res.json({
                     sucesso: true,
                     mensagem: "Este profissional já está cadastrado.",
@@ -388,6 +465,7 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
                 (erroId, resultadoId) => {
 
                     if (erroId) {
+                        removerUploadsRecebidos(req);
                         console.log("ERRO AO GERAR ID DO PRESTADOR:", erroId);
 
                         return res.status(500).json({
@@ -425,6 +503,7 @@ app.post('/cadastro-prestador', uploadPrestadores.array('fotos', 5), (req, res) 
                         (erro, resultado) => {
 
                             if (erro) {
+                                removerUploadsRecebidos(req);
                                 console.log("ERRO AO CADASTRAR PRESTADOR:", erro);
 
                                 return res.status(500).json({
@@ -557,6 +636,8 @@ app.post('/login', (req, res) => {
             email,
             telefone,
             tipo_usuario,
+            foto_perfil,
+            descricao,
             ativo
          FROM usuarios
          WHERE email = ?
@@ -656,6 +737,7 @@ app.get('/prestadores', (req, res) => {
             p.*,
             u.nome,
             u.telefone,
+            u.foto_perfil AS foto_perfil,
             (SELECT AVG(av.nota) FROM avaliacoes_solicitacoes av
              WHERE av.id_prestador = p.id_prestador AND av.alvo = 'PRESTADOR' AND av.nota IS NOT NULL AND av.moderacao_status = 'VISIVEL') AS nota_media_avaliacoes,
             (SELECT COUNT(*) FROM avaliacoes_solicitacoes av
@@ -2051,6 +2133,200 @@ app.get('/notificacoes/resumo', autenticar, async (req, res) => {
 // ===============================
 // PAINEL ADMINISTRATIVO
 // ===============================
+
+app.get('/api/perfil', autenticar, async (req, res) => {
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    try {
+        const usuarios = await consultar(
+            `SELECT id_usuario, nome, email, telefone, tipo_usuario, foto_perfil, descricao
+             FROM usuarios WHERE id_usuario = ? LIMIT 1`, [idUsuario]);
+        if (!usuarios[0]) return res.status(404).json({ sucesso: false, mensagem: 'Conta não encontrada.' });
+        const usuario = usuarios[0];
+        const tipo = String(usuario.tipo_usuario).toUpperCase();
+        if (!['CLIENTE', 'PRESTADOR'].includes(tipo)) {
+            return res.status(403).json({ sucesso: false, mensagem: 'A edição de perfil está disponível para contratantes e prestadores.' });
+        }
+
+        let prestador = null;
+        if (tipo === 'PRESTADOR') {
+            const prestadores = await consultar(
+                'SELECT id_prestador, descricao FROM prestadores WHERE id_usuario = ? LIMIT 1', [idUsuario]);
+            if (!prestadores[0]) return res.status(404).json({ sucesso: false, mensagem: 'Perfil profissional não encontrado.' });
+            prestador = prestadores[0];
+            prestador.fotos = await consultar(
+                `SELECT id_foto, url_foto FROM fotos_prestadores
+                 WHERE id_prestador = ? ORDER BY id_foto`, [prestador.id_prestador]);
+            usuario.descricao = prestador.descricao || '';
+        }
+        return res.json({ sucesso: true, usuario, prestador });
+    } catch (erro) {
+        console.error('ERRO AO CARREGAR PERFIL:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível carregar seu perfil.' });
+    }
+});
+
+app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
+    const idUsuario = req.usuarioAutenticado.id_usuario;
+    const email = String(req.body.email || '').trim();
+    const telefoneTexto = String(req.body.telefone || '').trim();
+    const descricao = String(req.body.descricao || '').trim();
+    const fotoPerfil = req.files?.foto_perfil?.[0] || null;
+    const fotosTrabalhos = req.files?.fotos_trabalhos || [];
+    const arquivosNovos = arquivosRecebidos(req);
+    const responderErro = (status, mensagem) => {
+        removerUploadsRecebidos(req);
+        return res.status(status).json({ sucesso: false, mensagem });
+    };
+
+    if (email.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        return responderErro(400, 'Informe um e-mail válido com até 100 caracteres.');
+    const telefone = telefoneTexto ? normalizarTelefoneBrasil(telefoneTexto) : null;
+    if (telefoneTexto && !telefone)
+        return responderErro(400, 'Informe um telefone válido com DDD e 10 ou 11 números.');
+    if (descricao.length > 2000)
+        return responderErro(400, 'A descrição deve ter no máximo 2.000 caracteres.');
+
+    let idsRemover;
+    try {
+        idsRemover = JSON.parse(req.body.fotos_remover || '[]');
+        if (!Array.isArray(idsRemover) || idsRemover.some(id => !Number.isSafeInteger(Number(id)) || Number(id) <= 0)) {
+            return responderErro(400, 'A seleção de fotos para remover é inválida.');
+        }
+        idsRemover = [...new Set(idsRemover.map(Number))];
+    } catch {
+        return responderErro(400, 'A seleção de fotos para remover é inválida.');
+    }
+
+    let conexao;
+    let transacaoAtiva = false;
+    let fotosRemovidas = [];
+    let fotoPerfilAntiga = null;
+    let respostaPerfil;
+    try {
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction();
+        transacaoAtiva = true;
+
+        const usuarios = await consultarNaConexao(
+            conexao,
+            `SELECT id_usuario, nome, email, telefone, tipo_usuario, foto_perfil, descricao
+             FROM usuarios WHERE id_usuario = ? FOR UPDATE`, [idUsuario]);
+        const usuario = usuarios[0];
+        if (!usuario) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return responderErro(404, 'Conta não encontrada.');
+        }
+        const tipo = String(usuario.tipo_usuario).toUpperCase();
+        if (!['CLIENTE', 'PRESTADOR'].includes(tipo)) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return responderErro(403, 'A edição de perfil está disponível para contratantes e prestadores.');
+        }
+
+        const emails = await consultarNaConexao(
+            conexao,
+            'SELECT id_usuario FROM usuarios WHERE LOWER(email) = LOWER(?) AND id_usuario <> ? LIMIT 1',
+            [email, idUsuario]);
+        if (emails.length) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return responderErro(409, 'Este e-mail já está sendo usado por outra conta.');
+        }
+
+        let prestador = null;
+        let fotosAtuais = [];
+        if (tipo === 'PRESTADOR') {
+            const prestadores = await consultarNaConexao(
+                conexao, 'SELECT id_prestador FROM prestadores WHERE id_usuario = ? FOR UPDATE', [idUsuario]);
+            if (!prestadores[0]) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return responderErro(404, 'Perfil profissional não encontrado.');
+            }
+            prestador = prestadores[0];
+            fotosAtuais = await consultarNaConexao(
+                conexao,
+                'SELECT id_foto, url_foto FROM fotos_prestadores WHERE id_prestador = ? FOR UPDATE',
+                [prestador.id_prestador]);
+            const idsAtuais = new Set(fotosAtuais.map(foto => Number(foto.id_foto)));
+            if (idsRemover.some(id => !idsAtuais.has(id))) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return responderErro(400, 'Uma ou mais fotos selecionadas não pertencem ao seu perfil.');
+            }
+            const totalFinal = fotosAtuais.length - idsRemover.length + fotosTrabalhos.length;
+            if (totalFinal > 5) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return responderErro(400, 'Seu perfil pode ter no máximo cinco fotos de trabalhos. Remova uma foto ou selecione menos imagens.');
+            }
+        } else if (fotosTrabalhos.length || idsRemover.length) {
+            await conexao.rollback(); transacaoAtiva = false;
+            return responderErro(400, 'Somente prestadores podem alterar fotos de trabalhos.');
+        }
+
+        fotoPerfilAntiga = usuario.foto_perfil;
+        const fotoPerfilUrl = fotoPerfil ? `/uploads/prestadores/${fotoPerfil.filename}` : usuario.foto_perfil;
+        await consultarNaConexao(
+            conexao,
+            'UPDATE usuarios SET email = ?, telefone = ?, foto_perfil = ? WHERE id_usuario = ?',
+            [email, telefone, fotoPerfilUrl, idUsuario]);
+
+        if (tipo === 'PRESTADOR') {
+            await consultarNaConexao(
+                conexao, 'UPDATE prestadores SET descricao = ? WHERE id_prestador = ?',
+                [descricao || null, prestador.id_prestador]);
+            if (idsRemover.length) {
+                const placeholders = idsRemover.map(() => '?').join(',');
+                const idsRemovidos = await consultarNaConexao(
+                    conexao,
+                    `SELECT url_foto FROM fotos_prestadores WHERE id_prestador = ? AND id_foto IN (${placeholders})`,
+                    [prestador.id_prestador, ...idsRemover]);
+                fotosRemovidas = idsRemovidos.map(foto => foto.url_foto);
+                await consultarNaConexao(
+                    conexao,
+                    `DELETE FROM fotos_prestadores WHERE id_prestador = ? AND id_foto IN (${placeholders})`,
+                    [prestador.id_prestador, ...idsRemover]);
+            }
+            for (const foto of fotosTrabalhos) {
+                const sequencia = await consultarNaConexao(conexao, 'INSERT INTO fotos_prestadores_id_seq () VALUES ()');
+                await consultarNaConexao(
+                    conexao,
+                    'INSERT INTO fotos_prestadores (id_foto, id_prestador, url_foto) VALUES (?, ?, ?)',
+                    [sequencia.insertId, prestador.id_prestador, `/uploads/prestadores/${foto.filename}`]);
+            }
+        } else {
+            await consultarNaConexao(conexao, 'UPDATE usuarios SET descricao = ? WHERE id_usuario = ?', [descricao || null, idUsuario]);
+        }
+
+        await conexao.commit();
+        transacaoAtiva = false;
+        respostaPerfil = {
+            id_usuario: usuario.id_usuario,
+            nome: usuario.nome,
+            email,
+            telefone,
+            tipo_usuario: tipo,
+            foto_perfil: fotoPerfilUrl,
+            descricao
+        };
+    } catch (erro) {
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        removerUploadsRecebidos(req);
+        if (erro.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ sucesso: false, mensagem: 'Este e-mail já está sendo usado por outra conta.' });
+        }
+        console.error('ERRO AO SALVAR PERFIL:', erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível salvar as alterações do perfil.' });
+    } finally {
+        if (conexao) conexao.release();
+    }
+
+    try {
+        if (fotoPerfil && fotoPerfilAntiga && fotoPerfilAntiga !== respostaPerfil.foto_perfil) {
+            await removerFotoPrestadorSeSemReferencias(fotoPerfilAntiga);
+        }
+        for (const url of fotosRemovidas) await removerFotoPrestadorSeSemReferencias(url);
+    } catch (erro) {
+        console.error('NÃO FOI POSSÍVEL LIMPAR ARQUIVOS DE FOTO SEM REFERÊNCIA:', erro.message);
+    }
+    return res.json({ sucesso: true, mensagem: 'Perfil atualizado com sucesso.', usuario: respostaPerfil });
+});
 
 app.get('/api/admin/dashboard', autenticar, autorizarAdmin, async (req, res) => {
     try {

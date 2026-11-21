@@ -426,9 +426,33 @@ function anexarMascaraNumerica(campo, mascara) {
     });
 }
 
+let fotosCadastroPrestador = [];
+
 function inicializarCamposCadastro() {
     anexarMascaraNumerica(document.getElementById('telefone'), mascararTelefoneBrasil);
     anexarMascaraNumerica(document.getElementById('cpfCnpj'), mascararCpfCnpj);
+    document.getElementById('fotosPrestador')?.addEventListener('change', evento => {
+        const novas = Array.from(evento.currentTarget.files || []);
+        const vagas = Math.max(0, 5 - fotosCadastroPrestador.length);
+        if (novas.length > vagas) alert(`Você pode selecionar mais ${vagas} foto(s). O limite é cinco.`);
+        fotosCadastroPrestador.push(...novas.slice(0, vagas).filter(arquivo => arquivo.type.startsWith('image/')));
+        evento.currentTarget.value = '';
+        renderizarPreviewFotosCadastro();
+    });
+}
+
+function removerFotoCadastroPrestador(indice) {
+    fotosCadastroPrestador.splice(Number(indice), 1);
+    renderizarPreviewFotosCadastro();
+}
+
+function renderizarPreviewFotosCadastro() {
+    const preview = document.getElementById('previewFotosPrestador');
+    if (!preview) return;
+    preview.querySelectorAll('img').forEach(imagem => URL.revokeObjectURL(imagem.src));
+    preview.innerHTML = fotosCadastroPrestador.map((foto, indice) => `<div class="foto-cadastro-preview"><img src="${URL.createObjectURL(foto)}" alt="Prévia da foto ${indice + 1}"><button type="button" onclick="removerFotoCadastroPrestador(${indice})" aria-label="Remover foto ${indice + 1}">×</button></div>`).join('');
+    const status = document.getElementById('statusFotosPrestador');
+    if (status) status.textContent = `${fotosCadastroPrestador.length} de 5 fotos selecionadas.`;
 }
 
 function validarCpfCnpj(valor) {
@@ -484,7 +508,7 @@ function validarFormularioCadastro(tipoUsuario) {
                 mostrarErroCadastro(`Informe sua ${rotulo}.`, id); return false;
             }
         }
-        if (document.getElementById('fotosPrestador').files.length > 5) {
+        if (fotosCadastroPrestador.length > 5) {
             mostrarErroCadastro('Selecione no máximo 5 fotos.', 'fotosPrestador'); return false;
         }
     }
@@ -588,12 +612,7 @@ async function cadastrarUsuario() {
                 );
 
                 // Adiciona as fotos selecionadas depois de validar a quantidade antes do cadastro da conta.
-                const campoFotos = document.getElementById("fotosPrestador");
-                const fotos = campoFotos.files;
-
-                for (let i = 0; i < fotos.length; i++) {
-                    dadosProfissional.append("fotos", fotos[i]);
-                }
+                fotosCadastroPrestador.forEach(foto => dadosProfissional.append("fotos", foto));
 
                 const respostaProfissional = await fetch(
                     `${API_BASE_URL}/cadastro-prestador`,
@@ -617,6 +636,9 @@ async function cadastrarUsuario() {
             }
 
             alert("Cadastro realizado com sucesso!");
+
+            fotosCadastroPrestador = [];
+            renderizarPreviewFotosCadastro();
 
             closeModal();
             verificarLogin();
@@ -998,7 +1020,9 @@ function mostrarSecaoPainel(secao) {
                 Confira as informações da sua conta na CONSTRUMAX.
             </p>
 
-            <div class="dados-conta-painel">
+            <div class="perfil-conta-resumo">
+                ${usuario.foto_perfil ? `<img src="${API_BASE_URL}${escaparTextoPainel(usuario.foto_perfil)}" alt="Foto de perfil" class="perfil-conta-foto">` : `<div class="perfil-conta-foto perfil-conta-iniciais">${escaparTextoPainel(String(usuario.nome || 'U').split(' ').map(parte => parte[0]).slice(0, 2).join(''))}</div>`}
+                <div class="dados-conta-painel">
 
                 <div class="campo-conta-painel">
                     <span>Nome completo</span>
@@ -1019,8 +1043,9 @@ function mostrarSecaoPainel(secao) {
                     <span>Tipo de conta</span>
                     <strong>${escaparTextoPainel(usuario.tipo_usuario || usuario.tipo)}</strong>
                 </div>
-
             </div>
+            </div>
+            <button type="button" class="btn-primary btn-editar-perfil" onclick="abrirEdicaoPerfil()">Editar perfil</button>
         `;
     }
 
@@ -1216,6 +1241,153 @@ function abrirMeusAnuncios() {
 
 function abrirMeusPedidos() {
     abrirPainelUsuario("pedidos");
+}
+
+let dadosPerfilEdicao = null;
+let fotosPerfilParaRemover = new Set();
+let novasFotosPerfil = [];
+
+async function requisicaoPerfil(opcoes = {}) {
+    const usuario = obterUsuarioPainel();
+    if (!usuario?.auth_token) throw new Error('Entre na sua conta para editar o perfil.');
+    const resposta = await fetch(`${API_BASE_URL}/api/perfil`, {
+        ...opcoes,
+        headers: {
+            ...(opcoes.body instanceof FormData ? {} : opcoes.body ? { 'Content-Type': 'application/json' } : {}),
+            ...(opcoes.headers || {}),
+            Authorization: `Bearer ${usuario.auth_token}`
+        }
+    });
+    const resultado = await resposta.json();
+    if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || 'Não foi possível atualizar o perfil.');
+    return resultado;
+}
+
+async function abrirEdicaoPerfil() {
+    const conteudo = document.getElementById('conteudoPainelUsuario');
+    conteudo.innerHTML = '<p>Carregando seus dados…</p>';
+    try {
+        dadosPerfilEdicao = await requisicaoPerfil();
+        fotosPerfilParaRemover = new Set();
+        novasFotosPerfil = [];
+        renderizarEditorPerfil();
+    } catch (erro) {
+        conteudo.innerHTML = `<div class="admin-erro"><p>${escaparTextoPainel(erro.message)}</p><button type="button" class="btn-primary" onclick="mostrarSecaoPainel('conta')">Voltar</button></div>`;
+    }
+}
+
+function renderizarEditorPerfil() {
+    const conteudo = document.getElementById('conteudoPainelUsuario');
+    const usuario = dadosPerfilEdicao.usuario;
+    const prestador = dadosPerfilEdicao.prestador;
+    const foto = usuario.foto_perfil
+        ? `<img id="fotoPerfilPreview" class="editor-perfil-foto" src="${API_BASE_URL}${escaparTextoPainel(usuario.foto_perfil)}" alt="Foto de perfil atual">`
+        : `<div id="fotoPerfilPreview" class="editor-perfil-foto editor-perfil-iniciais">${escaparTextoPainel(String(usuario.nome || 'U').split(' ').map(parte => parte[0]).slice(0, 2).join(''))}</div>`;
+
+    conteudo.innerHTML = `<h2 class="titulo-secao-painel">Editar perfil</h2>
+      <p class="descricao-secao-painel">Atualize seus dados. A senha não pode ser alterada por esta tela.</p>
+      <form id="formEditarPerfil" class="form-editar-perfil" onsubmit="salvarPerfil(event)">
+        <div class="editor-perfil-foto-linha">${foto}<label class="campo-perfil-arquivo">Foto de perfil<input id="fotoPerfilArquivo" name="foto_perfil" type="file" accept="image/*" onchange="previsualizarFotoPerfil(event)"><small>Selecione uma imagem de até 5 MB.</small></label></div>
+        <label class="campo-editar-perfil">E-mail<input name="email" type="email" maxlength="100" required value="${escaparTextoPainel(usuario.email)}" autocomplete="email"></label>
+        <label class="campo-editar-perfil">Telefone<input name="telefone" type="tel" maxlength="20" value="${escaparTextoPainel(usuario.telefone || '')}" placeholder="DDD + número" autocomplete="tel"></label>
+        <label class="campo-editar-perfil">Sobre mim<textarea name="descricao" maxlength="2000" rows="5" placeholder="Conte um pouco sobre você">${escaparTextoPainel(usuario.descricao || '')}</textarea></label>
+        ${prestador ? `<section class="editor-fotos-trabalho"><h3>Fotos dos seus trabalhos</h3><p>Você pode manter até cinco fotos. Para substituir, marque a foto antiga para remover e adicione a nova.</p><div id="editorFotosExistentes"></div><label class="campo-perfil-arquivo">Adicionar fotos<input id="fotosTrabalhoNovas" type="file" accept="image/*" multiple onchange="adicionarFotosPerfil(this.files); this.value=''"><small>Selecione várias imagens. Máximo de cinco fotos no total.</small></label><div id="editorNovasFotos"></div><p id="contadorFotosPerfil" class="contador-fotos-perfil"></p></section>` : ''}
+        <div class="acoes-editar-perfil"><button type="button" class="acao-anuncio-secundaria" onclick="mostrarSecaoPainel('conta')">Cancelar</button><button type="submit" class="acao-anuncio-principal">Salvar alterações</button></div>
+      </form>`;
+    if (prestador) renderizarFotosPerfilEditor();
+}
+
+function previsualizarFotoPerfil(evento) {
+    const arquivo = evento.target.files?.[0];
+    const preview = document.getElementById('fotoPerfilPreview');
+    if (!arquivo || !preview) return;
+    if (!arquivo.type.startsWith('image/')) {
+        evento.target.value = '';
+        alert('Selecione um arquivo de imagem.');
+        return;
+    }
+    if (preview.tagName === 'IMG') {
+        if (preview.src.startsWith('blob:')) URL.revokeObjectURL(preview.src);
+        preview.src = URL.createObjectURL(arquivo);
+    }
+    else {
+        const imagem = document.createElement('img');
+        imagem.id = 'fotoPerfilPreview';
+        imagem.className = 'editor-perfil-foto';
+        imagem.alt = 'Prévia da nova foto de perfil';
+        imagem.src = URL.createObjectURL(arquivo);
+        preview.replaceWith(imagem);
+    }
+}
+
+function adicionarFotosPerfil(arquivos) {
+    if (!dadosPerfilEdicao?.prestador) return;
+    const atuais = dadosPerfilEdicao.prestador.fotos || [];
+    const disponiveis = Math.max(0, 5 - (atuais.length - fotosPerfilParaRemover.size) - novasFotosPerfil.length);
+    const selecionadas = Array.from(arquivos || []);
+    if (selecionadas.length > disponiveis) alert(`Você pode adicionar mais ${disponiveis} foto(s). O limite é cinco no total.`);
+    novasFotosPerfil.push(...selecionadas.slice(0, disponiveis).filter(arquivo => arquivo.type.startsWith('image/')));
+    renderizarFotosPerfilEditor();
+}
+
+function alternarRemocaoFotoPerfil(idFoto) {
+    const atuais = dadosPerfilEdicao?.prestador?.fotos || [];
+    const removendo = fotosPerfilParaRemover.has(Number(idFoto));
+    if (removendo && atuais.length - (fotosPerfilParaRemover.size - 1) + novasFotosPerfil.length > 5) {
+        alert('Remova uma das novas imagens antes de manter esta foto. O limite é cinco.');
+        return;
+    }
+    if (removendo) fotosPerfilParaRemover.delete(Number(idFoto));
+    else fotosPerfilParaRemover.add(Number(idFoto));
+    renderizarFotosPerfilEditor();
+}
+
+function removerNovaFotoPerfil(indice) {
+    novasFotosPerfil.splice(Number(indice), 1);
+    renderizarFotosPerfilEditor();
+}
+
+function renderizarFotosPerfilEditor() {
+    const existentes = document.getElementById('editorFotosExistentes');
+    const novas = document.getElementById('editorNovasFotos');
+    if (!existentes || !novas) return;
+    novas.querySelectorAll('img').forEach(imagem => {
+        if (imagem.src.startsWith('blob:')) URL.revokeObjectURL(imagem.src);
+    });
+    existentes.innerHTML = (dadosPerfilEdicao.prestador.fotos || []).map(foto => {
+        const vaiRemover = fotosPerfilParaRemover.has(Number(foto.id_foto));
+        return `<article class="foto-perfil-item ${vaiRemover ? 'foto-perfil-remover' : ''}"><img src="${API_BASE_URL}${escaparTextoPainel(foto.url_foto)}" alt="Foto de trabalho atual"><button type="button" onclick="alternarRemocaoFotoPerfil(${Number(foto.id_foto)})">${vaiRemover ? 'Manter foto' : 'Remover / substituir'}</button></article>`;
+    }).join('') || '<p>Você ainda não adicionou fotos de trabalhos.</p>';
+    novas.innerHTML = novasFotosPerfil.map((arquivo, indice) => `<article class="foto-perfil-item"><img src="${URL.createObjectURL(arquivo)}" alt="Prévia da nova foto"><button type="button" onclick="removerNovaFotoPerfil(${indice})">Remover nova foto</button></article>`).join('');
+    const contador = document.getElementById('contadorFotosPerfil');
+    if (contador) contador.textContent = `${(dadosPerfilEdicao.prestador.fotos || []).length - fotosPerfilParaRemover.size + novasFotosPerfil.length} de 5 fotos após salvar`;
+}
+
+async function salvarPerfil(evento) {
+    evento.preventDefault();
+    const form = evento.currentTarget;
+    const formulario = new FormData();
+    formulario.append('email', form.elements.email.value.trim());
+    formulario.append('telefone', form.elements.telefone.value.trim());
+    formulario.append('descricao', form.elements.descricao.value.trim());
+    const fotoPerfil = form.elements.foto_perfil.files?.[0];
+    if (fotoPerfil) formulario.append('foto_perfil', fotoPerfil);
+    if (dadosPerfilEdicao?.prestador) {
+        formulario.append('fotos_remover', JSON.stringify([...fotosPerfilParaRemover]));
+        novasFotosPerfil.forEach(foto => formulario.append('fotos_trabalhos', foto));
+    }
+    const botao = form.querySelector('button[type="submit"]');
+    botao.disabled = true;
+    try {
+        const resultado = await requisicaoPerfil({ method: 'PUT', body: formulario });
+        const usuario = obterUsuarioPainel();
+        localStorage.setItem('usuario', JSON.stringify({ ...usuario, ...resultado.usuario, auth_token: usuario.auth_token }));
+        alert(resultado.mensagem || 'Perfil atualizado com sucesso.');
+        mostrarSecaoPainel('conta');
+    } catch (erro) {
+        alert(erro.message || 'Não foi possível salvar o perfil.');
+        botao.disabled = false;
+    }
 }
 
 async function requisicaoAdmin(caminho, opcoes = {}) {
@@ -1666,8 +1838,9 @@ function abrirPerfilPrestador(id) {
     const solicitar = podeIniciarConversa
         ? `<button class="perfil-botao-contato perfil-botao-solicitar" type="button" onclick="solicitarOrcamento(${Number(id)})">📋 Solicitar orçamento</button>`
         : '';
-    const avatar = fotos.length
-        ? `<img class="perfil-foto-principal" id="perfilFotoPrincipal" src="${API_BASE_URL}${escaparHTML(fotos[0])}" alt="Trabalho de ${nome}">`
+    const fotoPerfil = prestador.foto_perfil || prestador.foto || fotos[0];
+    const avatar = fotoPerfil
+        ? `<img class="perfil-foto-principal" id="perfilFotoPrincipal" src="${API_BASE_URL}${escaparHTML(fotoPerfil)}" alt="Foto de perfil de ${nome}">`
         : `<div class="perfil-avatar-grande">${escaparHTML(String(prestador.nome || "P").split(" ").map(parte => parte[0]).slice(0, 2).join(""))}</div>`;
     const galeria = fotos.length ? `<section class="perfil-galeria-secao"><h3>📷 Meus trabalhos</h3><div class="perfil-galeria">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoPerfilPrestador(${Number(id)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="${API_BASE_URL}${escaparHTML(foto)}" alt="Trabalho ${indice + 1} de ${nome}"></button>`).join("")}</div></section>` : "";
     const notaHtml = temAvaliacao
