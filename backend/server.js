@@ -6,11 +6,17 @@ const db = require('./db');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const {
+    criarArmazenamentoImagens,
+    criarCaminhoObjeto,
+    validarImagem
+} = require('./image-storage');
 
 console.log("SERVER DA CONSTRUMAX CARREGADO");
 
 const app = express();
 const sessoes = new Map();
+const armazenamentoImagens = criarArmazenamentoImagens();
 
 function criarSessao(idUsuario) {
     const token = crypto.randomBytes(32).toString('hex');
@@ -58,34 +64,15 @@ if (!fs.existsSync(pastaUploads)) {
     fs.mkdirSync(pastaUploads, { recursive: true });
 }
 
-const storage = multer.diskStorage({
-
-    destination: function (req, file, cb) {
-        cb(null, pastaUploads);
-    },
-
-    filename: function (req, file, cb) {
-
-        const nomeUnico =
-            Date.now() +
-            '-' +
-            Math.round(Math.random() * 1E9) +
-            path.extname(file.originalname);
-
-        cb(null, nomeUnico);
-    }
-
-});
-
 const upload = multer({
-    storage: storage,
+    storage: multer.memoryStorage(),
     limits: {
         files: 5,
         fileSize: 5 * 1024 * 1024
     },
     fileFilter: function (req, file, cb) {
 
-        if (file.mimetype.startsWith('image/')) {
+        if (file) {
             cb(null, true);
         } else {
             cb(new Error('Apenas imagens são permitidas.'));
@@ -100,29 +87,14 @@ if (!fs.existsSync(pastaUploadsPrestadores)) {
     fs.mkdirSync(pastaUploadsPrestadores, { recursive: true });
 }
 
-const storagePrestadores = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, pastaUploadsPrestadores);
-    },
-    filename: function (req, file, cb) {
-        const nomeUnico =
-            Date.now() +
-            '-' +
-            Math.round(Math.random() * 1E9) +
-            path.extname(file.originalname);
-
-        cb(null, nomeUnico);
-    }
-});
-
 const uploadPrestadores = multer({
-    storage: storagePrestadores,
+    storage: multer.memoryStorage(),
     limits: {
         files: 6,
         fileSize: 5 * 1024 * 1024
     },
     fileFilter: function (req, file, cb) {
-        if (file.mimetype.startsWith('image/')) {
+        if (file) {
             cb(null, true);
         } else {
             cb(new Error('Apenas imagens são permitidas.'));
@@ -137,7 +109,7 @@ function arquivosRecebidos(req) {
 
 function removerUploadsRecebidos(req) {
     arquivosRecebidos(req).forEach(arquivo => {
-        if (arquivo?.path && fs.existsSync(arquivo.path)) fs.unlinkSync(arquivo.path);
+        if (arquivo) arquivo.buffer = null;
     });
 }
 
@@ -153,16 +125,65 @@ function removerArquivoFotoPrestador(url) {
     if (caminho && fs.existsSync(caminho)) fs.unlinkSync(caminho);
 }
 
-async function removerFotoPrestadorSeSemReferencias(url) {
-    if (!caminhoFotoPrestador(url)) return;
+async function removerFotoPrestadorSeSemReferencias(url, categoria, idRegistro) {
+    const referencia = String(url || '');
+    const ehObjetoSupabase = armazenamentoImagens.caminhoObjetoGerenciado(referencia);
+    const ehArquivoLegado = Boolean(caminhoFotoPrestador(referencia));
+    if (!ehObjetoSupabase && !ehArquivoLegado) return;
+    if (ehObjetoSupabase && !armazenamentoImagens.caminhoObjetoPertenceA(referencia, categoria, idRegistro)) {
+        const erro = new Error('Imagem fora do registro autorizado.');
+        erro.code = 'IMAGE_STORAGE_OWNERSHIP_MISMATCH';
+        throw erro;
+    }
     const referencias = await consultar(
         `SELECT
             (SELECT COUNT(*) FROM usuarios WHERE foto_perfil = ?) +
             (SELECT COUNT(*) FROM prestadores WHERE foto = ?) +
-            (SELECT COUNT(*) FROM fotos_prestadores WHERE url_foto = ?) AS total`,
-        [url, url, url]
+            (SELECT COUNT(*) FROM fotos_prestadores WHERE url_foto = ?) +
+            (SELECT COUNT(*) FROM fotos_equipamentos WHERE url_foto = ?) AS total`,
+        [referencia, referencia, referencia, referencia]
     );
-    if (Number(referencias[0]?.total) === 0) removerArquivoFotoPrestador(url);
+    if (Number(referencias[0]?.total) !== 0) return;
+    if (ehObjetoSupabase) await armazenamentoImagens.remover(referencia, categoria, idRegistro);
+    else removerArquivoFotoPrestador(referencia);
+}
+
+async function guardarImagemNoSupabase(arquivo, categoria, idRegistro) {
+    const tipoReal = validarImagem(arquivo);
+    const extensoes = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+    const caminho = criarCaminhoObjeto(categoria, idRegistro, `imagem.${extensoes[tipoReal]}`);
+    return armazenamentoImagens.enviar(arquivo, caminho);
+}
+
+async function guardarImagensNoSupabase(arquivos, categoria, idRegistro) {
+    const caminhos = [];
+    try {
+        const lista = [...(arquivos || [])];
+        for (const arquivo of lista) validarImagem(arquivo);
+        for (const arquivo of lista) {
+            caminhos.push(await guardarImagemNoSupabase(arquivo, categoria, idRegistro));
+        }
+        return caminhos;
+    } catch (erro) {
+        await armazenamentoImagens.remover(caminhos, categoria, idRegistro).catch(limpezaErro => {
+            console.error('FALHA AO LIMPAR UPLOAD PARCIAL DO STORAGE:', limpezaErro.code || 'ERRO');
+        });
+        throw erro;
+    }
+}
+
+async function removerImagensLegadasOuSupabase(referencias, categoria, idRegistro) {
+    for (const referencia of [...new Set(referencias || [])]) {
+        if (armazenamentoImagens.caminhoObjetoGerenciado(String(referencia || ''))) {
+            await removerFotoPrestadorSeSemReferencias(referencia, categoria, idRegistro);
+        } else if (String(referencia || '').startsWith('/uploads/equipamentos/')) {
+            if (categoria !== 'equipamento') continue;
+            arquivoFotoEquipamento(referencia);
+        } else if (String(referencia || '').startsWith('/uploads/prestadores/')) {
+            if (!['perfilUsuario', 'perfilPrestador', 'trabalhosPrestador'].includes(categoria)) continue;
+            await removerFotoPrestadorSeSemReferencias(referencia, categoria, idRegistro);
+        }
+    }
 }
 
 function uploadCamposPerfil(req, res, next) {
@@ -199,6 +220,13 @@ function uploadFotosCadastroPrestador(req, res, next) {
 
 app.use(cors());
 app.use(express.json());
+
+app.get('/api/imagens/config', (req, res) => {
+    res.json({
+        sucesso: true,
+        basePublica: armazenamentoImagens.basePublica
+    });
+});
 
 app.use(
     '/uploads',
@@ -399,223 +427,68 @@ app.post('/cadastro', (req, res) => {
 // ===============================
 
 
-app.post('/cadastro-prestador', autenticar, uploadFotosCadastroPrestador, (req, res) => {
-    const idUsuarioEnviado = Number(req.body?.id_usuario);
-    if (req.usuarioAutenticado.tipo_usuario !== 'PRESTADOR' ||
-        !Number.isSafeInteger(idUsuarioEnviado) || idUsuarioEnviado !== req.usuarioAutenticado.id_usuario) {
+app.post('/cadastro-prestador', autenticar, uploadFotosCadastroPrestador, async (req, res) => {
+    const idUsuario = Number(req.body?.id_usuario);
+    if (req.usuarioAutenticado.tipo_usuario !== 'PRESTADOR' || !Number.isSafeInteger(idUsuario) || idUsuario !== req.usuarioAutenticado.id_usuario) {
         removerUploadsRecebidos(req);
-        return res.status(403).json({ sucesso: false, mensagem: 'Acesso não autorizado para cadastrar este perfil profissional.' });
+        return res.status(403).json({ sucesso: false, mensagem: 'Acesso nao autorizado para cadastrar este perfil profissional.' });
     }
-    if (!req.body) {
-        return res.status(400).json({
-            sucesso: false,
-            mensagem: "Dados do profissional não recebidos."
-        });
-    }
-
-    const {
-        id_usuario,
-        cpf_cnpj,
-        profissao,
-        cidade,
-        estado,
-        valor_diaria,
-        descricao
-    } = req.body;
-
+    if (!req.body) return res.status(400).json({ sucesso: false, mensagem: 'Dados do profissional nao recebidos.' });
+    const { cpf_cnpj, profissao, cidade, estado, valor_diaria, descricao } = req.body;
     if (!validarDocumentoCpfCnpj(cpf_cnpj)) {
         removerUploadsRecebidos(req);
-        return res.status(400).json({ sucesso: false, mensagem: 'Informe um CPF ou CNPJ completo e válido.' });
+        return res.status(400).json({ sucesso: false, mensagem: 'Informe um CPF ou CNPJ completo e valido.' });
     }
     if (!String(profissao || '').trim() || !String(cidade || '').trim() || !String(estado || '').trim()) {
         removerUploadsRecebidos(req);
-        return res.status(400).json({ sucesso: false, mensagem: 'Informe profissão, cidade e estado.' });
+        return res.status(400).json({ sucesso: false, mensagem: 'Informe profiss?o, cidade e estado.' });
     }
-    const cpfCnpjNormalizado = String(cpf_cnpj).replace(/\D/g, '');
 
-    // Verifica se o usuário já possui cadastro de prestador
-    db.query(
-        `SELECT id_prestador FROM prestadores WHERE id_usuario = ?`,
-        [id_usuario],
-        (erroBusca, resultadoBusca) => {
-
-            if (erroBusca) {
-                removerUploadsRecebidos(req);
-                console.log("ERRO AO BUSCAR PRESTADOR:", erroBusca);
-
-                return res.status(500).json({
-                    sucesso: false,
-                    mensagem: "Erro ao verificar cadastro profissional."
-                });
-            }
-
-            if (resultadoBusca.length > 0) {
-                removerUploadsRecebidos(req);
-                return res.json({
-                    sucesso: true,
-                    mensagem: "Este profissional já está cadastrado.",
-                    id_prestador: resultadoBusca[0].id_prestador,
-                    ja_existia: true
-                });
-            }
-
-            // Gera um ID para o prestador
-            db.query(
-                "INSERT INTO prestadores_id_seq () VALUES ()",
-                (erroId, resultadoId) => {
-
-                    if (erroId) {
-                        removerUploadsRecebidos(req);
-                        console.log("ERRO AO GERAR ID DO PRESTADOR:", erroId);
-
-                        return res.status(500).json({
-                            sucesso: false,
-                            mensagem: "Erro ao gerar ID do profissional."
-                        });
-                    }
-
-                    const idPrestador = resultadoId.insertId;
-
-                    // Cadastra os dados do profissional
-                    db.query(
-                        `INSERT INTO prestadores
-                        (
-                            id_prestador,
-                            id_usuario,
-                            cpf_cnpj,
-                            profissao,
-                            cidade,
-                            estado,
-                            valor_diaria,
-                            descricao
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [
-                            idPrestador,
-                            id_usuario,
-                            cpfCnpjNormalizado,
-                            profissao,
-                            cidade,
-                            estado,
-                            valor_diaria,
-                            descricao
-                        ],
-                        (erro, resultado) => {
-
-                            if (erro) {
-                                removerUploadsRecebidos(req);
-                                console.log("ERRO AO CADASTRAR PRESTADOR:", erro);
-
-                                return res.status(500).json({
-                                    sucesso: false,
-                                    mensagem: "Erro ao cadastrar os dados profissionais."
-                                });
-                            }
-
-                            const fotos = req.files || [];
-
-                            // Se não houver fotos, finaliza o cadastro
-                            if (fotos.length === 0) {
-                                return res.json({
-                                    sucesso: true,
-                                    mensagem: "Prestador cadastrado com sucesso!",
-                                    id_prestador: idPrestador,
-                                    quantidade_fotos: 0
-                                });
-                            }
-
-                            let fotosSalvas = 0;
-                            let houveErro = false;
-                            let fotosProcessadas = 0;
-
-                            // Salva cada foto no banco
-                            fotos.forEach(foto => {
-
-                                const caminhoFoto =
-                                    `/uploads/prestadores/${foto.filename}`;
-
-                                // Gera um ID para a foto
-                                db.query(
-                                    "INSERT INTO fotos_prestadores_id_seq () VALUES ()",
-                                    (erroIdFoto, resultadoIdFoto) => {
-
-                                        if (erroIdFoto) {
-                                            console.log(
-                                                "ERRO AO GERAR ID DA FOTO:",
-                                                erroIdFoto
-                                            );
-
-                                            houveErro = true;
-                                            fotosProcessadas++;
-
-                                            finalizarFotos();
-                                            return;
-                                        }
-
-                                        const idFoto = resultadoIdFoto.insertId;
-
-                                        // Insere a foto na tabela
-                                        db.query(
-                                            `INSERT INTO fotos_prestadores
-                                            (id_foto, id_prestador, url_foto)
-                                            VALUES (?, ?, ?)`,
-                                            [
-                                                idFoto,
-                                                idPrestador,
-                                                caminhoFoto
-                                            ],
-                                            (erroFoto) => {
-
-                                                if (erroFoto) {
-                                                    console.log(
-                                                        "ERRO AO SALVAR FOTO:",
-                                                        erroFoto
-                                                    );
-
-                                                    houveErro = true;
-                                                } else {
-                                                    fotosSalvas++;
-                                                }
-
-                                                fotosProcessadas++;
-                                                finalizarFotos();
-                                            }
-                                        );
-                                    }
-                                );
-                            });
-
-                            function finalizarFotos() {
-                                if (fotosProcessadas !== fotos.length) {
-                                    return;
-                                }
-
-                                if (houveErro) {
-                                    return res.status(500).json({
-                                        sucesso: false,
-                                        mensagem: "Prestador cadastrado, mas houve erro ao salvar algumas fotos.",
-                                        quantidade_fotos: fotosSalvas
-                                    });
-                                }
-
-                                return res.json({
-                                    sucesso: true,
-                                    mensagem: "Prestador cadastrado com sucesso!",
-                                    id_prestador: idPrestador,
-                                    quantidade_fotos: fotosSalvas
-                                });
-                            }
-                        }
-                    );
-                }
-            );
+    let conexao;
+    let transacaoAtiva = false;
+    let caminhosEnviados = [];
+    try {
+        const existentes = await consultar('SELECT id_prestador FROM prestadores WHERE id_usuario = ?', [idUsuario]);
+        if (existentes.length) {
+            removerUploadsRecebidos(req);
+            return res.json({ sucesso: true, mensagem: 'Este profissional ja esta cadastrado.', id_prestador: existentes[0].id_prestador, ja_existia: true });
         }
-    );
+        const sequencia = await consultar('INSERT INTO prestadores_id_seq () VALUES ()');
+        const idPrestador = Number(sequencia.insertId);
+        caminhosEnviados = await guardarImagensNoSupabase(req.files || [], 'trabalhosPrestador', idPrestador);
+
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction();
+        transacaoAtiva = true;
+        await consultarNaConexao(conexao,
+            'INSERT INTO prestadores (id_prestador, id_usuario, cpf_cnpj, profissao, cidade, estado, valor_diaria, descricao) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [idPrestador, idUsuario, String(cpf_cnpj).replace(/\D/g, ''), profissao, cidade, estado, valor_diaria, descricao]);
+        let fotosSalvas = 0;
+        for (const caminho of caminhosEnviados) {
+            const sequenciaFoto = await consultarNaConexao(conexao, 'INSERT INTO fotos_prestadores_id_seq () VALUES ()');
+            await consultarNaConexao(conexao,
+                'INSERT INTO fotos_prestadores (id_foto, id_prestador, url_foto) VALUES (?, ?, ?)',
+                [sequenciaFoto.insertId, idPrestador, caminho]);
+            fotosSalvas++;
+        }
+        await conexao.commit();
+        transacaoAtiva = false;
+        removerUploadsRecebidos(req);
+        return res.json({ sucesso: true, mensagem: 'Prestador cadastrado com sucesso!', id_prestador: idPrestador, quantidade_fotos: fotosSalvas });
+    } catch (erro) {
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        removerUploadsRecebidos(req);
+        for (const caminho of caminhosEnviados) {
+            try { await removerFotoPrestadorSeSemReferencias(caminho, 'trabalhosPrestador', idPrestador); }
+            catch (erroLimpeza) { console.error('FALHA AO LIMPAR IMAGEM DE CADASTRO:', erroLimpeza.code || 'ERRO'); }
+        }
+        if (erro.code === 'IMAGE_INVALID_FILE') return res.status(400).json({ sucesso: false, mensagem: erro.message });
+        console.error('ERRO AO CADASTRAR PRESTADOR:', erro.code || erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Nao foi possivel concluir o cadastro profissional e salvar as imagens.' });
+    } finally {
+        if (conexao) conexao.release();
+    }
 });
-
-
-
-
 // ===============================
 // LOGIN
 // ===============================
@@ -887,214 +760,51 @@ app.get('/equipamentos', (req, res) => {
 // CADASTRO DE EQUIPAMENTO
 // ===============================
 
-app.post(
-    '/cadastro-equipamento',
-    autenticar,
-    upload.array('fotos', 5),
-    (req, res) => {
-
-        console.log("EQUIPAMENTO RECEBIDO:", req.body);
-        console.log("FOTOS RECEBIDAS:", req.files);
-
-        const {
-            id_usuario,
-            nome_equipamento,
-            tipo_equipamento,
-            descricao,
-            valor_diaria,
-            quantidade
-        } = req.body;
-
-        if (Number(id_usuario) !== req.usuarioAutenticado.id_usuario) {
-            return res.status(403).json({ sucesso: false, mensagem: 'Você só pode cadastrar anúncios na sua conta.' });
-        }
-
-        // VERIFICAR SE O PRESTADOR EXISTE
-        db.query(
-            `SELECT id_prestador
-             FROM prestadores
-             WHERE id_usuario = ?`,
-            [id_usuario],
-            (erro, resultado) => {
-
-                if (erro) {
-                    console.error("ERRO AO BUSCAR PRESTADOR:", erro);
-
-                    return res.status(500).json({
-                        sucesso: false,
-                        mensagem: "Erro ao buscar profissional."
-                    });
-                }
-
-                if (resultado.length === 0) {
-                    return res.status(404).json({
-                        sucesso: false,
-                        mensagem: "Profissional não encontrado."
-                    });
-                }
-
-                const idPrestador = resultado[0].id_prestador;
-
-                // GERAR ID DO EQUIPAMENTO
-                db.query(
-                    "INSERT INTO equipamentos_id_seq () VALUES ()",
-                    (erroSequencia, resultadoSequencia) => {
-
-                        if (erroSequencia) {
-                            console.error("ERRO AO GERAR ID DO EQUIPAMENTO:", erroSequencia);
-
-                            return res.status(500).json({
-                                sucesso: false,
-                                mensagem: "Erro ao gerar ID do equipamento."
-                            });
-                        }
-
-                        const idEquipamento = resultadoSequencia.insertId;
-
-                        // CADASTRAR EQUIPAMENTO
-                        db.query(
-                            `INSERT INTO equipamentos
-                            (
-                                id_equipamento,
-                                id_prestador,
-                                nome_equipamento,
-                                tipo_equipamento,
-                                descricao,
-                                valor_diaria,
-                                quantidade,
-                                disponivel
-                            )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-
-                            [
-                                idEquipamento,
-                                idPrestador,
-                                nome_equipamento,
-                                tipo_equipamento,
-                                descricao,
-                                valor_diaria,
-                                quantidade,
-                                1
-                            ],
-
-                            (erroEquipamento) => {
-
-                                if (erroEquipamento) {
-                                    console.error("ERRO AO CADASTRAR EQUIPAMENTO:", erroEquipamento);
-
-                                    return res.status(500).json({
-                                        sucesso: false,
-                                        mensagem: "Erro ao cadastrar equipamento."
-                                    });
-                                }
-
-                                console.log("EQUIPAMENTO CADASTRADO:", idEquipamento);
-
-                                // CADASTRAR FOTOS
-                                const fotos = req.files || [];
-
-                                if (fotos.length === 0) {
-                                    return res.json({
-                                        sucesso: true,
-                                        id_equipamento: idEquipamento,
-                                        quantidade_fotos: 0
-                                    });
-                                }
-
-                                let fotosProcessadas = 0;
-                                let erroFoto = false;
-
-                                fotos.forEach((foto) => {
-
-                                    const urlFoto =
-                                        `/uploads/equipamentos/${foto.filename}`;
-
-                                    // GERAR ID DA FOTO
-                                    db.query(
-                                        "INSERT INTO fotos_equipamentos_id_seq () VALUES ()",
-                                        (erroSequenciaFoto, resultadoSequenciaFoto) => {
-
-                                            if (erroSequenciaFoto) {
-                                                console.error("ERRO AO GERAR ID DA FOTO:", erroSequenciaFoto);
-
-                                                if (!erroFoto) {
-                                                    erroFoto = true;
-
-                                                    return res.status(500).json({
-                                                        sucesso: false,
-                                                        mensagem: "Erro ao gerar ID da foto."
-                                                    });
-                                                }
-
-                                                return;
-                                            }
-
-                                            const idFoto = resultadoSequenciaFoto.insertId;
-
-                                            // SALVAR FOTO
-                                            db.query(
-                                                `INSERT INTO fotos_equipamentos
-                                                (
-                                                    id_foto,
-                                                    id_equipamento,
-                                                    url_foto
-                                                )
-                                                VALUES (?, ?, ?)`,
-
-                                                [
-                                                    idFoto,
-                                                    idEquipamento,
-                                                    urlFoto
-                                                ],
-
-                                                (erroFotoBanco) => {
-
-                                                    if (erroFotoBanco) {
-                                                        console.error("ERRO AO SALVAR FOTO:", erroFotoBanco);
-
-                                                        if (!erroFoto) {
-                                                            erroFoto = true;
-
-                                                            return res.status(500).json({
-                                                                sucesso: false,
-                                                                mensagem: "Equipamento cadastrado, mas houve erro ao salvar as fotos."
-                                                            });
-                                                        }
-
-                                                        return;
-                                                    }
-
-                                                    fotosProcessadas++;
-
-                                                    if (
-                                                        fotosProcessadas === fotos.length &&
-                                                        !erroFoto
-                                                    ) {
-                                                        console.log("TODAS AS FOTOS FORAM SALVAS.");
-
-                                                        res.json({
-                                                            sucesso: true,
-                                                            id_equipamento: idEquipamento,
-                                                            quantidade_fotos: fotos.length
-                                                        });
-                                                    }
-                                                }
-                                            );
-                                        }
-                                    );
-                                });
-                            }
-                        );
-                    }
-                );
-            }
-        );
+app.post('/cadastro-equipamento', autenticar, upload.array('fotos', 5), async (req, res) => {
+    const { id_usuario, nome_equipamento, tipo_equipamento, descricao, valor_diaria, quantidade } = req.body;
+    if (Number(id_usuario) !== req.usuarioAutenticado.id_usuario) {
+        removerUploadsRecebidos(req);
+        return res.status(403).json({ sucesso: false, mensagem: 'Voce so pode cadastrar anuncios na sua conta.' });
     }
-);
 
+    let caminhosEnviados = [];
+    let conexao;
+    let transacaoAtiva = false;
+    try {
+        const prestadores = await consultar('SELECT id_prestador FROM prestadores WHERE id_usuario = ?', [id_usuario]);
+        if (!prestadores.length) {
+            removerUploadsRecebidos(req);
+            return res.status(404).json({ sucesso: false, mensagem: 'Profissional nao encontrado.' });
+        }
+        const sequencia = await consultar('INSERT INTO equipamentos_id_seq () VALUES ()');
+        const idEquipamento = Number(sequencia.insertId);
+        caminhosEnviados = await guardarImagensNoSupabase(req.files || [], 'equipamento', idEquipamento);
 
-
-
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction();
+        transacaoAtiva = true;
+        await consultarNaConexao(conexao,
+            'INSERT INTO equipamentos (id_equipamento, id_prestador, nome_equipamento, tipo_equipamento, descricao, valor_diaria, quantidade, disponivel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [idEquipamento, prestadores[0].id_prestador, nome_equipamento, tipo_equipamento, descricao, valor_diaria, quantidade, 1]);
+        for (const caminho of caminhosEnviados) await salvarReferenciaFotoEquipamento(idEquipamento, caminho, conexao);
+        await conexao.commit();
+        transacaoAtiva = false;
+        removerUploadsRecebidos(req);
+        return res.json({ sucesso: true, id_equipamento: idEquipamento, quantidade_fotos: caminhosEnviados.length });
+    } catch (erro) {
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        removerUploadsRecebidos(req);
+        for (const caminho of caminhosEnviados) {
+            try { await removerFotoPrestadorSeSemReferencias(caminho, 'equipamento', idEquipamento); }
+            catch (erroLimpeza) { console.error('FALHA AO LIMPAR IMAGEM DE EQUIPAMENTO:', erroLimpeza.code || 'ERRO'); }
+        }
+        if (erro.code === 'IMAGE_INVALID_FILE') return res.status(400).json({ sucesso: false, mensagem: erro.message });
+        console.error('ERRO AO CADASTRAR EQUIPAMENTO:', erro.code || erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Nao foi possivel cadastrar o equipamento e suas imagens.' });
+    } finally {
+        if (conexao) conexao.release();
+    }
+});
 // ===============================
 // INICIAR SERVIDOR
 // ===============================
@@ -1250,11 +960,12 @@ async function buscarAnuncioDoUsuario(idEquipamento, idUsuario) {
     return resultados[0] || null;
 }
 
-async function salvarFotoEquipamento(idEquipamento, foto) {
-    const sequencia = await consultar('INSERT INTO fotos_equipamentos_id_seq () VALUES ()');
-    await consultar(
+async function salvarReferenciaFotoEquipamento(idEquipamento, caminho, conexao = null) {
+    const executar = conexao ? consultarNaConexao.bind(null, conexao) : consultar;
+    const sequencia = await executar('INSERT INTO fotos_equipamentos_id_seq () VALUES ()');
+    await executar(
         `INSERT INTO fotos_equipamentos (id_foto, id_equipamento, url_foto) VALUES (?, ?, ?)`,
-        [sequencia.insertId, idEquipamento, `/uploads/equipamentos/${foto.filename}`]
+        [sequencia.insertId, idEquipamento, caminho]
     );
 }
 
@@ -1270,41 +981,67 @@ app.put('/equipamentos/:id', autenticar, upload.array('fotos', 5), async (req, r
     const valor = Number(valor_diaria);
     const qtd = Number(quantidade);
     if (!Number.isInteger(idEquipamento) || idEquipamento <= 0 || !nome_equipamento?.trim() ||
-        !tipo_equipamento?.trim() || !Number.isFinite(valor) || valor < 0 ||
-        !Number.isInteger(qtd) || qtd < 1) {
+        !tipo_equipamento?.trim() || !Number.isFinite(valor) || valor < 0 || !Number.isInteger(qtd) || qtd < 1) {
+        removerUploadsRecebidos(req);
         return res.status(400).json({ sucesso: false, mensagem: 'Confira os dados do equipamento.' });
     }
 
+    let conexao;
+    let transacaoAtiva = false;
+    let caminhosNovos = [];
     try {
         const anuncio = await buscarAnuncioDoUsuario(idEquipamento, req.usuarioAutenticado.id_usuario);
-        if (!anuncio) return res.status(404).json({ sucesso: false, mensagem: 'Anúncio não encontrado.' });
-
+        if (!anuncio) {
+            removerUploadsRecebidos(req);
+            return res.status(404).json({ sucesso: false, mensagem: 'Anuncio nao encontrado.' });
+        }
         const fotosAtuais = await consultar('SELECT id_foto, url_foto FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
         let manter;
         try { manter = JSON.parse(req.body.fotosManter || '[]'); } catch { manter = []; }
         const urlsManter = new Set(Array.isArray(manter) ? manter.filter(url => fotosAtuais.some(f => f.url_foto === url)) : []);
         const novasFotos = req.files || [];
         if (urlsManter.size + novasFotos.length > 5) {
-            novasFotos.forEach(f => arquivoFotoEquipamento(`/uploads/equipamentos/${f.filename}`));
-            return res.status(400).json({ sucesso: false, mensagem: 'O anúncio pode ter no máximo 5 fotos.' });
+            removerUploadsRecebidos(req);
+            return res.status(400).json({ sucesso: false, mensagem: 'O anuncio pode ter no maximo 5 fotos.' });
         }
 
-        await consultar(
-            `UPDATE equipamentos SET nome_equipamento = ?, tipo_equipamento = ?, descricao = ?, valor_diaria = ?, quantidade = ? WHERE id_equipamento = ?`,
-            [nome_equipamento.trim(), tipo_equipamento.trim(), descricao || '', valor, qtd, idEquipamento]
-        );
+        caminhosNovos = await guardarImagensNoSupabase(novasFotos, 'equipamento', idEquipamento);
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction();
+        transacaoAtiva = true;
+        await consultarNaConexao(conexao,
+            'UPDATE equipamentos SET nome_equipamento = ?, tipo_equipamento = ?, descricao = ?, valor_diaria = ?, quantidade = ? WHERE id_equipamento = ? AND id_prestador = ?',
+            [nome_equipamento.trim(), tipo_equipamento.trim(), descricao || '', valor, qtd, idEquipamento, anuncio.id_prestador]);
 
-        for (const foto of fotosAtuais) {
-            if (!urlsManter.has(foto.url_foto)) {
-                await consultar('DELETE FROM fotos_equipamentos WHERE id_foto = ? AND id_equipamento = ?', [foto.id_foto, idEquipamento]);
-                arquivoFotoEquipamento(foto.url_foto);
-            }
+        const fotosRemovidas = fotosAtuais.filter(foto => !urlsManter.has(foto.url_foto));
+        for (const foto of fotosRemovidas) {
+            await consultarNaConexao(conexao, 'DELETE FROM fotos_equipamentos WHERE id_foto = ? AND id_equipamento = ?', [foto.id_foto, idEquipamento]);
         }
-        for (const foto of novasFotos) await salvarFotoEquipamento(idEquipamento, foto);
-        res.json({ sucesso: true, mensagem: 'Anúncio atualizado.' });
+        for (const caminho of caminhosNovos) {
+            const sequencia = await consultarNaConexao(conexao, 'INSERT INTO fotos_equipamentos_id_seq () VALUES ()');
+            await consultarNaConexao(conexao,
+                'INSERT INTO fotos_equipamentos (id_foto, id_equipamento, url_foto) VALUES (?, ?, ?)',
+                [sequencia.insertId, idEquipamento, caminho]);
+        }
+        await conexao.commit();
+        transacaoAtiva = false;
+        removerUploadsRecebidos(req);
+
+        try { await removerImagensLegadasOuSupabase(fotosRemovidas.map(foto => foto.url_foto), 'equipamento', idEquipamento); }
+        catch (erroLimpeza) { console.error('FALHA AO LIMPAR FOTOS SUBSTITU?DAS:', erroLimpeza.code || 'ERRO'); }
+        return res.json({ sucesso: true, mensagem: 'Anuncio atualizado.' });
     } catch (erro) {
-        console.error('ERRO AO EDITAR EQUIPAMENTO:', erro);
-        res.status(500).json({ sucesso: false, mensagem: 'Não foi possível atualizar o anúncio.' });
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        removerUploadsRecebidos(req);
+        for (const caminho of caminhosNovos) {
+            try { await removerFotoPrestadorSeSemReferencias(caminho, 'equipamento', idEquipamento); }
+            catch (erroLimpeza) { console.error('FALHA AO LIMPAR UPLOAD SEM REFER?NCIA:', erroLimpeza.code || 'ERRO'); }
+        }
+        if (erro.code === 'IMAGE_INVALID_FILE') return res.status(400).json({ sucesso: false, mensagem: erro.message });
+        console.error('ERRO AO EDITAR EQUIPAMENTO:', erro.code || erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Nao foi possivel atualizar o anuncio.' });
+    } finally {
+        if (conexao) conexao.release();
     }
 });
 
@@ -1327,20 +1064,31 @@ app.patch('/equipamentos/:id/disponibilidade', autenticar, async (req, res) => {
 
 app.delete('/equipamentos/:id', autenticar, async (req, res) => {
     const idEquipamento = Number(req.params.id);
-    if (!Number.isInteger(idEquipamento) || idEquipamento <= 0) {
-        return res.status(400).json({ sucesso: false, mensagem: 'Anúncio inválido.' });
-    }
+    if (!Number.isInteger(idEquipamento) || idEquipamento <= 0)
+        return res.status(400).json({ sucesso: false, mensagem: 'Anuncio invalido.' });
+
+    let conexao;
+    let transacaoAtiva = false;
     try {
         const anuncio = await buscarAnuncioDoUsuario(idEquipamento, req.usuarioAutenticado.id_usuario);
-        if (!anuncio) return res.status(404).json({ sucesso: false, mensagem: 'Anúncio não encontrado.' });
-        const fotos = await consultar('SELECT url_foto FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
-        await consultar('DELETE FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
-        await consultar('DELETE FROM equipamentos WHERE id_equipamento = ? AND id_prestador = ?', [idEquipamento, anuncio.id_prestador]);
-        fotos.forEach(f => arquivoFotoEquipamento(f.url_foto));
-        res.json({ sucesso: true });
+        if (!anuncio) return res.status(404).json({ sucesso: false, mensagem: 'Anuncio nao encontrado.' });
+        const fotos = await consultar('SELECT id_foto, url_foto FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction();
+        transacaoAtiva = true;
+        await consultarNaConexao(conexao, 'DELETE FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
+        await consultarNaConexao(conexao, 'DELETE FROM equipamentos WHERE id_equipamento = ? AND id_prestador = ?', [idEquipamento, anuncio.id_prestador]);
+        await conexao.commit();
+        transacaoAtiva = false;
+        try { await removerImagensLegadasOuSupabase(fotos.map(foto => foto.url_foto), 'equipamento', idEquipamento); }
+        catch (erroLimpeza) { console.error('FALHA AO LIMPAR FOTOS DO AN?NCIO EXCLU?DO:', erroLimpeza.code || 'ERRO'); }
+        return res.json({ sucesso: true });
     } catch (erro) {
-        console.error('ERRO AO EXCLUIR EQUIPAMENTO:', erro);
-        res.status(500).json({ sucesso: false, mensagem: 'Não foi possível excluir o anúncio.' });
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        console.error('ERRO AO EXCLUIR EQUIPAMENTO:', erro.code || erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Nao foi possivel excluir o anuncio.' });
+    } finally {
+        if (conexao) conexao.release();
     }
 });
 
@@ -2172,11 +1920,17 @@ app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
     const descricao = String(req.body.descricao || '').trim();
     const fotoPerfil = req.files?.foto_perfil?.[0] || null;
     const fotosTrabalhos = req.files?.fotos_trabalhos || [];
-    const arquivosNovos = arquivosRecebidos(req);
+    const caminhosNovos = [];
     const responderErro = (status, mensagem) => {
         removerUploadsRecebidos(req);
         return res.status(status).json({ sucesso: false, mensagem });
     };
+
+    try {
+        for (const arquivo of arquivosRecebidos(req)) validarImagem(arquivo);
+    } catch (erroImagem) {
+        return responderErro(400, erroImagem.message);
+    }
 
     if (email.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
         return responderErro(400, 'Informe um e-mail válido com até 100 caracteres.');
@@ -2201,6 +1955,7 @@ app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
     let transacaoAtiva = false;
     let fotosRemovidas = [];
     let fotoPerfilAntiga = null;
+    let idPrestadorPerfil = null;
     let respostaPerfil;
     try {
         conexao = await db.promise().getConnection();
@@ -2241,6 +1996,7 @@ app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
                 return responderErro(404, 'Perfil profissional não encontrado.');
             }
             prestador = prestadores[0];
+            idPrestadorPerfil = Number(prestador.id_prestador);
             fotosAtuais = await consultarNaConexao(
                 conexao,
                 'SELECT id_foto, url_foto FROM fotos_prestadores WHERE id_prestador = ? FOR UPDATE',
@@ -2261,7 +2017,19 @@ app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
         }
 
         fotoPerfilAntiga = usuario.foto_perfil;
-        const fotoPerfilUrl = fotoPerfil ? `/uploads/prestadores/${fotoPerfil.filename}` : usuario.foto_perfil;
+        const fotoPerfilUrl = fotoPerfil
+            ? await guardarImagemNoSupabase(fotoPerfil, 'perfilUsuario', idUsuario)
+            : usuario.foto_perfil;
+        if (fotoPerfil && fotoPerfilUrl) caminhosNovos.push({ caminho: fotoPerfilUrl, categoria: 'perfilUsuario', id: idUsuario });
+        let caminhosTrabalhos = [];
+        if (fotosTrabalhos.length) {
+            caminhosTrabalhos = await guardarImagensNoSupabase(fotosTrabalhos, 'trabalhosPrestador', prestador.id_prestador);
+            caminhosNovos.push(...caminhosTrabalhos.map(caminho => ({
+                caminho,
+                categoria: 'trabalhosPrestador',
+                id: prestador.id_prestador
+            })));
+        }
         await consultarNaConexao(
             conexao,
             'UPDATE usuarios SET email = ?, telefone = ?, foto_perfil = ? WHERE id_usuario = ?',
@@ -2283,12 +2051,12 @@ app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
                     `DELETE FROM fotos_prestadores WHERE id_prestador = ? AND id_foto IN (${placeholders})`,
                     [prestador.id_prestador, ...idsRemover]);
             }
-            for (const foto of fotosTrabalhos) {
+            for (const caminho of caminhosTrabalhos) {
                 const sequencia = await consultarNaConexao(conexao, 'INSERT INTO fotos_prestadores_id_seq () VALUES ()');
                 await consultarNaConexao(
                     conexao,
                     'INSERT INTO fotos_prestadores (id_foto, id_prestador, url_foto) VALUES (?, ?, ?)',
-                    [sequencia.insertId, prestador.id_prestador, `/uploads/prestadores/${foto.filename}`]);
+                    [sequencia.insertId, prestador.id_prestador, caminho]);
             }
         } else {
             await consultarNaConexao(conexao, 'UPDATE usuarios SET descricao = ? WHERE id_usuario = ?', [descricao || null, idUsuario]);
@@ -2308,6 +2076,10 @@ app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
     } catch (erro) {
         if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
         removerUploadsRecebidos(req);
+        for (const imagem of caminhosNovos) {
+            try { await removerFotoPrestadorSeSemReferencias(imagem.caminho, imagem.categoria, imagem.id); }
+            catch (erroLimpeza) { console.error('FALHA AO LIMPAR IMAGEM DE PERFIL SEM REFERÊNCIA:', erroLimpeza.code || 'ERRO'); }
+        }
         if (erro.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ sucesso: false, mensagem: 'Este e-mail já está sendo usado por outra conta.' });
         }
@@ -2319,9 +2091,9 @@ app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
 
     try {
         if (fotoPerfil && fotoPerfilAntiga && fotoPerfilAntiga !== respostaPerfil.foto_perfil) {
-            await removerFotoPrestadorSeSemReferencias(fotoPerfilAntiga);
+            await removerFotoPrestadorSeSemReferencias(fotoPerfilAntiga, 'perfilUsuario', idUsuario);
         }
-        for (const url of fotosRemovidas) await removerFotoPrestadorSeSemReferencias(url);
+        for (const url of fotosRemovidas) await removerFotoPrestadorSeSemReferencias(url, 'trabalhosPrestador', idPrestadorPerfil);
     } catch (erro) {
         console.error('NÃO FOI POSSÍVEL LIMPAR ARQUIVOS DE FOTO SEM REFERÊNCIA:', erro.message);
     }

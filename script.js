@@ -2,6 +2,38 @@ const API_BASE_URL = ["localhost", "127.0.0.1"].includes(window.location.hostnam
     ? "http://localhost:3000"
     : "https://contrumax-ofc.onrender.com";
 
+let BASE_PUBLICA_IMAGENS_SUPABASE = '';
+let requisicaoConfigImagens = null;
+
+function prepararUrlsImagens() {
+    if (!requisicaoConfigImagens) {
+        requisicaoConfigImagens = fetch(`${API_BASE_URL}/api/imagens/config`)
+            .then(resposta => resposta.ok ? resposta.json() : null)
+            .then(config => {
+                BASE_PUBLICA_IMAGENS_SUPABASE = config?.sucesso && typeof config.basePublica === 'string'
+                    ? config.basePublica.replace(/\/$/, '')
+                    : '';
+                return BASE_PUBLICA_IMAGENS_SUPABASE;
+            })
+            .catch(() => '');
+    }
+    return requisicaoConfigImagens;
+}
+
+function resolverUrlImagem(referencia) {
+    const caminho = String(referencia || '').trim();
+    if (!caminho) return '';
+    if (/^(?:https?:|blob:|data:)/i.test(caminho)) return caminho;
+    if (caminho.startsWith('/uploads/')) return `${API_BASE_URL}${caminho}`;
+    if (BASE_PUBLICA_IMAGENS_SUPABASE &&
+        /^(?:prestadores\/\d+\/(?:perfil|trabalhos)|equipamentos\/\d+|usuarios\/\d+\/perfil)\/[a-f0-9-]{36}\.[a-z0-9]{1,8}$/i.test(caminho)) {
+        return `${BASE_PUBLICA_IMAGENS_SUPABASE}/${caminho.split('/').map(encodeURIComponent).join('/')}`;
+    }
+    return '';
+}
+
+prepararUrlsImagens();
+
 function alternarMenuMobile() {
     const menu = document.querySelector('.nav-links');
     const botao = document.getElementById('menuMobileToggle');
@@ -753,7 +785,7 @@ function abrirEdicaoEquipamento(id) {
             </div>
             <label>Fotos atuais <span class="ajuda-editar-fotos">Desmarque as que deseja remover.</span></label>
             <div class="fotos-editar-equipamento">
-                ${fotos.map((foto, i) => `<label class="foto-editar-item"><img src="${API_BASE_URL}${escaparTextoPainel(foto)}" alt="Foto atual ${i + 1}"><span><input type="checkbox" name="fotosManter" value="${escaparTextoPainel(foto)}" checked> Manter</span></label>`).join("") || "<p>Este anúncio não tem fotos.</p>"}
+                ${fotos.map((foto, i) => `<label class="foto-editar-item"><img src="${escaparTextoPainel(resolverUrlImagem(foto))}" alt="Foto atual ${i + 1}"><span><input type="checkbox" name="fotosManter" value="${escaparTextoPainel(foto)}" checked> Manter</span></label>`).join("") || "<p>Este anúncio não tem fotos.</p>"}
             </div>
             <label>Adicionar fotos<input name="fotos" type="file" accept="image/*" multiple></label>
             <small>Máximo de 5 fotos no total.</small>
@@ -1021,7 +1053,7 @@ function mostrarSecaoPainel(secao) {
             </p>
 
             <div class="perfil-conta-resumo">
-                ${usuario.foto_perfil ? `<img src="${API_BASE_URL}${escaparTextoPainel(usuario.foto_perfil)}" alt="Foto de perfil" class="perfil-conta-foto">` : `<div class="perfil-conta-foto perfil-conta-iniciais">${escaparTextoPainel(String(usuario.nome || 'U').split(' ').map(parte => parte[0]).slice(0, 2).join(''))}</div>`}
+                ${usuario.foto_perfil ? `<img src="${escaparTextoPainel(resolverUrlImagem(usuario.foto_perfil))}" alt="Foto de perfil" class="perfil-conta-foto">` : `<div class="perfil-conta-foto perfil-conta-iniciais">${escaparTextoPainel(String(usuario.nome || 'U').split(' ').map(parte => parte[0]).slice(0, 2).join(''))}</div>`}
                 <div class="dados-conta-painel">
 
                 <div class="campo-conta-painel">
@@ -1250,6 +1282,7 @@ let novasFotosPerfil = [];
 async function requisicaoPerfil(opcoes = {}) {
     const usuario = obterUsuarioPainel();
     if (!usuario?.auth_token) throw new Error('Entre na sua conta para editar o perfil.');
+    await prepararUrlsImagens();
     const resposta = await fetch(`${API_BASE_URL}/api/perfil`, {
         ...opcoes,
         headers: {
@@ -1281,7 +1314,7 @@ function renderizarEditorPerfil() {
     const usuario = dadosPerfilEdicao.usuario;
     const prestador = dadosPerfilEdicao.prestador;
     const foto = usuario.foto_perfil
-        ? `<img id="fotoPerfilPreview" class="editor-perfil-foto" src="${API_BASE_URL}${escaparTextoPainel(usuario.foto_perfil)}" alt="Foto de perfil atual">`
+        ? `<img id="fotoPerfilPreview" class="editor-perfil-foto" src="${escaparTextoPainel(resolverUrlImagem(usuario.foto_perfil))}" alt="Foto de perfil atual">`
         : `<div id="fotoPerfilPreview" class="editor-perfil-foto editor-perfil-iniciais">${escaparTextoPainel(String(usuario.nome || 'U').split(' ').map(parte => parte[0]).slice(0, 2).join(''))}</div>`;
 
     conteudo.innerHTML = `<h2 class="titulo-secao-painel">Editar perfil</h2>
@@ -1356,7 +1389,7 @@ function renderizarFotosPerfilEditor() {
     });
     existentes.innerHTML = (dadosPerfilEdicao.prestador.fotos || []).map(foto => {
         const vaiRemover = fotosPerfilParaRemover.has(Number(foto.id_foto));
-        return `<article class="foto-perfil-item ${vaiRemover ? 'foto-perfil-remover' : ''}"><img src="${API_BASE_URL}${escaparTextoPainel(foto.url_foto)}" alt="Foto de trabalho atual"><button type="button" onclick="alternarRemocaoFotoPerfil(${Number(foto.id_foto)})">${vaiRemover ? 'Manter foto' : 'Remover / substituir'}</button></article>`;
+        return `<article class="foto-perfil-item ${vaiRemover ? 'foto-perfil-remover' : ''}"><img src="${escaparTextoPainel(resolverUrlImagem(foto.url_foto))}" alt="Foto de trabalho atual"><button type="button" onclick="alternarRemocaoFotoPerfil(${Number(foto.id_foto)})">${vaiRemover ? 'Manter foto' : 'Remover / substituir'}</button></article>`;
     }).join('') || '<p>Você ainda não adicionou fotos de trabalhos.</p>';
     novas.innerHTML = novasFotosPerfil.map((arquivo, indice) => `<article class="foto-perfil-item"><img src="${URL.createObjectURL(arquivo)}" alt="Prévia da nova foto"><button type="button" onclick="removerNovaFotoPerfil(${indice})">Remover nova foto</button></article>`).join('');
     const contador = document.getElementById('contadorFotosPerfil');
@@ -1449,6 +1482,7 @@ async function carregarSecaoAdmin(secao) {
     conteudo.innerHTML = '<p>Carregando painel administrativo…</p>';
     document.querySelectorAll('.painel-nav-btn').forEach(botao => botao.classList.toggle('ativo', botao.getAttribute('onclick') === `mostrarSecaoPainel('${secao}')`));
     try {
+        await prepararUrlsImagens();
         if (secao === 'admin-dashboard') {
             const { indicadores } = await requisicaoAdmin('/api/admin/dashboard');
             const cards = [['Usuários', indicadores.usuarios], ['Contratantes', indicadores.clientes], ['Prestadores', indicadores.prestadores], ['Equipamentos', indicadores.equipamentos], ['Solicitações', indicadores.solicitacoes]];
@@ -1464,7 +1498,7 @@ async function carregarSecaoAdmin(secao) {
             renderizarTabelaAdmin('Gerenciar prestadores', 'Buscar por nome, e-mail ou profissão', ['Profissional', 'Contato', 'Profissão', 'Cidade', 'Perfil', 'Equipamentos', 'Status', 'Ação'], prestadores.map(p => `<tr><td>${escaparTextoPainel(p.nome)}</td><td>${escaparTextoPainel(p.email)}<br>${escaparTextoPainel(p.telefone || '')}</td><td>${escaparTextoPainel(p.profissao || '—')}</td><td>${escaparTextoPainel([p.cidade, p.estado].filter(Boolean).join(', ') || '—')}</td><td>${p.verificado ? 'Verificado' : 'Não verificado'}${p.valor_diaria == null ? '' : `<br>R$ ${Number(p.valor_diaria).toFixed(2)}/dia`}<details><summary>Descrição</summary>${escaparTextoPainel(p.descricao || 'Sem descrição.')}</details></td><td>${p.total_equipamentos}</td><td>${Number(p.admin_ativo) ? 'Ativo' : 'Suspenso'}</td><td>${botaoAdminRotulo(Number(p.admin_ativo), 'prestador', p.id_prestador)}</td></tr>`).join(''), secao);
         } else if (secao === 'admin-equipamentos') {
             const { equipamentos } = await requisicaoAdmin(`/api/admin/equipamentos?busca=${busca}`);
-            renderizarTabelaAdmin('Gerenciar equipamentos', 'Buscar por equipamento ou prestador', ['Equipamento', 'Tipo', 'Prestador', 'Diária', 'Qtd.', 'Detalhes', 'Status', 'Ação'], equipamentos.map(e => `<tr><td>${escaparTextoPainel(e.nome_equipamento)}</td><td>${escaparTextoPainel(e.tipo_equipamento || '—')}</td><td>${escaparTextoPainel(e.nome_prestador)}<br>${escaparTextoPainel(e.email_prestador)}</td><td>${e.valor_diaria == null ? '—' : `R$ ${Number(e.valor_diaria).toFixed(2)}`}</td><td>${e.quantidade}</td><td><details><summary>Descrição e fotos (${e.fotos.length})</summary><p>${escaparTextoPainel(e.descricao || 'Sem descrição.')}</p><div class="admin-fotos">${e.fotos.map((foto, i) => `<img src="${API_BASE_URL}${escaparTextoPainel(foto)}" alt="Foto ${i + 1} de ${escaparTextoPainel(e.nome_equipamento)}">`).join('')}</div></details></td><td>${Number(e.admin_visivel) ? 'Visível' : 'Oculto'}</td><td>${botaoAdminRotulo(Number(e.admin_visivel), 'equipamento', e.id_equipamento, 'visivel')} ${Number(e.admin_visivel) ? `<button class="admin-acao admin-acao-perigo" onclick="excluirAnuncioAdmin(${Number(e.id_equipamento)})">Excluir</button>` : ''}</td></tr>`).join(''), secao);
+            renderizarTabelaAdmin('Gerenciar equipamentos', 'Buscar por equipamento ou prestador', ['Equipamento', 'Tipo', 'Prestador', 'Diária', 'Qtd.', 'Detalhes', 'Status', 'Ação'], equipamentos.map(e => `<tr><td>${escaparTextoPainel(e.nome_equipamento)}</td><td>${escaparTextoPainel(e.tipo_equipamento || '—')}</td><td>${escaparTextoPainel(e.nome_prestador)}<br>${escaparTextoPainel(e.email_prestador)}</td><td>${e.valor_diaria == null ? '—' : `R$ ${Number(e.valor_diaria).toFixed(2)}`}</td><td>${e.quantidade}</td><td><details><summary>Descrição e fotos (${e.fotos.length})</summary><p>${escaparTextoPainel(e.descricao || 'Sem descrição.')}</p><div class="admin-fotos">${e.fotos.map((foto, i) => `<img src="${escaparTextoPainel(resolverUrlImagem(foto))}" alt="Foto ${i + 1} de ${escaparTextoPainel(e.nome_equipamento)}">`).join('')}</div></details></td><td>${Number(e.admin_visivel) ? 'Visível' : 'Oculto'}</td><td>${botaoAdminRotulo(Number(e.admin_visivel), 'equipamento', e.id_equipamento, 'visivel')} ${Number(e.admin_visivel) ? `<button class="admin-acao admin-acao-perigo" onclick="excluirAnuncioAdmin(${Number(e.id_equipamento)})">Excluir</button>` : ''}</td></tr>`).join(''), secao);
         } else if (secao === 'admin-avaliacoes') {
             const { avaliacoes } = await requisicaoAdmin('/api/admin/avaliacoes');
             conteudo.innerHTML = `<h2 class="titulo-secao-painel">Moderar avaliações</h2><div class="admin-tabela-wrap"><table class="admin-tabela"><thead><tr><th>Data</th><th>Cliente</th><th>Alvo</th><th>Avaliação</th><th>Comentário</th><th>Status</th><th>Ação</th></tr></thead><tbody>${avaliacoes.map(a => `<tr><td>${new Date(a.data_criacao).toLocaleDateString('pt-BR')}</td><td>${escaparTextoPainel(a.nome_cliente)}</td><td>${escaparTextoPainel(a.alvo === 'PRESTADOR' ? a.nome_prestador : a.nome_equipamento)}</td><td>${a.nota == null ? 'Sem estrelas' : `${a.nota}/5`}</td><td>${escaparTextoPainel(a.comentario || '—')}</td><td>${a.moderacao_status === 'VISIVEL' ? 'Visível' : 'Oculta'}</td><td>${botaoAdminRotulo(a.moderacao_status === 'VISIVEL', 'avaliacao', `${a.fonte}:${a.id_avaliacao}`, 'visivel')}</td></tr>`).join('')}</tbody></table></div>`;
@@ -1518,6 +1552,8 @@ async function carregarMeusAnuncios() {
 
     try {
 
+        await prepararUrlsImagens();
+
         const resposta = await fetch(
             `${API_BASE_URL}/meus-anuncios/${encodeURIComponent(usuario.id_usuario)}`,
             { headers: { Authorization: `Bearer ${usuario.auth_token || ""}` } }
@@ -1568,7 +1604,7 @@ async function carregarMeusAnuncios() {
                     <div class="fotos-anuncio-painel">
                         ${(prestador.fotos || []).map(foto => `
                             <img
-                                src="${API_BASE_URL}${escaparTextoPainel(foto)}"
+                                src="${escaparTextoPainel(resolverUrlImagem(foto))}"
                                 alt="Foto do trabalho profissional"
                             >
                         `).join("")}
@@ -1636,7 +1672,7 @@ async function carregarMeusAnuncios() {
 
                             ${(equipamento.fotos || []).map(foto => `
                                 <img
-                                    src="${API_BASE_URL}${escaparTextoPainel(foto)}"
+                                    src="${escaparTextoPainel(resolverUrlImagem(foto))}"
                                     alt="Foto do equipamento"
                                 >
                             `).join("")}
@@ -1701,7 +1737,7 @@ function renderizarPrestadores(prestadores) {
         const verificado = [1, true, "1", "true"].includes(prestador.verificado);
         const galeriaFotos = fotos.length ? `
             <div class="prof-gallery" id="carrossel-prestador-${id}" data-indice="0">
-                <img class="prof-photo" src="${API_BASE_URL}${escaparHTML(fotos[0])}" alt="Trabalho de ${nome}" data-indice="0">
+                <img class="prof-photo" src="${escaparHTML(resolverUrlImagem(fotos[0]))}" alt="Trabalho de ${nome}" data-indice="0">
                 ${fotos.length > 1 ? `
                     <button class="prof-photo-arrow prof-photo-prev" onclick="mudarFotoPrestador(${id}, -1)" type="button" aria-label="Foto anterior">❮</button>
                     <button class="prof-photo-arrow prof-photo-next" onclick="mudarFotoPrestador(${id}, 1)" type="button" aria-label="Próxima foto">❯</button>
@@ -1750,7 +1786,7 @@ function mudarFotoPrestador(idPrestador, direcao) {
 
     const imagem = galeria.querySelector(".prof-photo");
 
-    imagem.src = `${API_BASE_URL}${prestador.fotos[indice]}`;
+    imagem.src = `${resolverUrlImagem(prestador.fotos[indice])}`;
     imagem.dataset.indice = indice;
 
     const contador = document.getElementById(
@@ -1785,6 +1821,7 @@ async function buscarPrestadores(event) {
     if (botao) botao.disabled = true;
 
     try {
+        await prepararUrlsImagens();
         const resposta = await fetch(`${API_BASE_URL}/prestadores?${parametros.toString()}`);
         if (!resposta.ok) throw new Error("Falha ao consultar profissionais.");
         const resultados = await resposta.json();
@@ -1840,9 +1877,9 @@ function abrirPerfilPrestador(id) {
         : '';
     const fotoPerfil = prestador.foto_perfil || prestador.foto || fotos[0];
     const avatar = fotoPerfil
-        ? `<img class="perfil-foto-principal" id="perfilFotoPrincipal" src="${API_BASE_URL}${escaparHTML(fotoPerfil)}" alt="Foto de perfil de ${nome}">`
+        ? `<img class="perfil-foto-principal" id="perfilFotoPrincipal" src="${escaparHTML(resolverUrlImagem(fotoPerfil))}" alt="Foto de perfil de ${nome}">`
         : `<div class="perfil-avatar-grande">${escaparHTML(String(prestador.nome || "P").split(" ").map(parte => parte[0]).slice(0, 2).join(""))}</div>`;
-    const galeria = fotos.length ? `<section class="perfil-galeria-secao"><h3>📷 Meus trabalhos</h3><div class="perfil-galeria">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoPerfilPrestador(${Number(id)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="${API_BASE_URL}${escaparHTML(foto)}" alt="Trabalho ${indice + 1} de ${nome}"></button>`).join("")}</div></section>` : "";
+    const galeria = fotos.length ? `<section class="perfil-galeria-secao"><h3>📷 Meus trabalhos</h3><div class="perfil-galeria">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoPerfilPrestador(${Number(id)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="${escaparHTML(resolverUrlImagem(foto))}" alt="Trabalho ${indice + 1} de ${nome}"></button>`).join("")}</div></section>` : "";
     const notaHtml = temAvaliacao
         ? `<strong>⭐ ${nota.toFixed(1)}</strong> de 5 (${totalAvaliacoes} avaliações)`
         : '<span>Este profissional ainda não recebeu avaliações.</span>';
@@ -1928,7 +1965,7 @@ function selecionarFotoPerfilPrestador(id, indice) {
     const prestador = todosPrestadores.find(item => Number(item.id_prestador) === Number(id));
     const imagem = document.getElementById("perfilFotoPrincipal");
     if (prestador?.fotos?.[indice] && imagem) {
-        imagem.src = `${API_BASE_URL}${prestador.fotos[indice]}`;
+        imagem.src = `${resolverUrlImagem(prestador.fotos[indice])}`;
     }
 }
 
@@ -2111,29 +2148,23 @@ document.getElementById("camposProfissional").style.display = "none";
 
 let todosEquipamentos = [];
 
-fetch(`${API_BASE_URL}/equipamentos`)
-.then(res => {
-    if (!res.ok) throw new Error(`Falha ao consultar equipamentos (HTTP ${res.status}).`);
-    return res.json();
-})
-.then(equipamentos => {
-    if (!Array.isArray(equipamentos)) throw new Error('A resposta de equipamentos está em formato inválido.');
-
-    todosEquipamentos = equipamentos;
-
-    renderizarEquipamentos(equipamentos);
-
-})
-.catch(erro => {
-
-    console.error("Erro equipamentos:", erro);
-    const lista = document.getElementById("lista-equipamentos");
-    const resultado = document.getElementById("resultadoBuscaEquipamentos");
-    if (lista) lista.innerHTML = '<div class="busca-equipamentos-vazio"><h3>Não foi possível carregar os equipamentos</h3><p>Tente novamente em instantes.</p></div>';
-    if (resultado) resultado.textContent = '';
-
-});
-
+(async () => {
+    try {
+        await prepararUrlsImagens();
+        const resposta = await fetch(API_BASE_URL + '/equipamentos');
+        if (!resposta.ok) throw new Error('Falha ao consultar equipamentos (HTTP ' + resposta.status + ').');
+        const equipamentos = await resposta.json();
+        if (!Array.isArray(equipamentos)) throw new Error('A resposta de equipamentos esta em formato invalido.');
+        todosEquipamentos = equipamentos;
+        renderizarEquipamentos(equipamentos);
+    } catch (erro) {
+        console.error('Erro equipamentos:', erro);
+        const lista = document.getElementById('lista-equipamentos');
+        const resultado = document.getElementById('resultadoBuscaEquipamentos');
+        if (lista) lista.innerHTML = '<div class="busca-equipamentos-vazio"><h3>Nao foi possivel carregar os equipamentos</h3><p>Tente novamente em instantes.</p></div>';
+        if (resultado) resultado.textContent = '';
+    }
+})();
 
 function renderizarEquipamentos(equipamentos) {
 
@@ -2161,7 +2192,7 @@ function renderizarEquipamentos(equipamentos) {
         const estado = escaparHTML(equipamento.estado || '');
         const preco = Number(equipamento.valor_diaria) || 0;
         const quantidade = Number(equipamento.quantidade) || 0;
-        const fotoInicial = fotos.length > 0 ? `${API_BASE_URL}${escaparHTML(fotos[0])}` : '';
+        const fotoInicial = fotos.length > 0 ? `${escaparHTML(resolverUrlImagem(fotos[0]))}` : '';
 
         const disponivel = Number(equipamento.disponivel) === 1 && quantidade > 0;
 
@@ -2249,10 +2280,10 @@ function abrirDetalhesEquipamento(idEquipamento, event) {
     const usuario = obterUsuarioPainel();
     const dono = Number(usuario?.id_usuario) > 0 && Number(usuario.id_usuario) === Number(equipamento.id_usuario_prestador);
     const capa = fotos.length
-        ? `<img id="fotoDetalheEquipamento" class="equipamento-foto-principal" src="${API_BASE_URL}${escaparHTML(fotos[0])}" alt="${escaparHTML(equipamento.nome_equipamento)}">`
+        ? `<img id="fotoDetalheEquipamento" class="equipamento-foto-principal" src="${escaparHTML(resolverUrlImagem(fotos[0]))}" alt="${escaparHTML(equipamento.nome_equipamento)}">`
         : '<div class="equipamento-sem-foto">📷 Sem fotos cadastradas</div>';
     const miniaturas = fotos.length > 1
-        ? `<div class="equipamento-miniaturas">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoDetalheEquipamento(${Number(idEquipamento)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="${API_BASE_URL}${escaparHTML(foto)}" alt="Foto ${indice + 1}"></button>`).join('')}</div>` : '';
+        ? `<div class="equipamento-miniaturas">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoDetalheEquipamento(${Number(idEquipamento)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="${escaparHTML(resolverUrlImagem(foto))}" alt="Foto ${indice + 1}"></button>`).join('')}</div>` : '';
     conteudo.innerHTML = `<button type="button" class="equipamento-detalhe-fechar" onclick="fecharDetalhesEquipamento()" aria-label="Fechar">×</button>
         <div class="equipamento-detalhe-grid"><div>${capa}${miniaturas}</div>
         <div class="equipamento-detalhe-info"><span class="solicitacao-tipo">EQUIPAMENTO PARA LOCAÇÃO</span>
@@ -2275,7 +2306,7 @@ function abrirDetalhesEquipamento(idEquipamento, event) {
 function selecionarFotoDetalheEquipamento(idEquipamento, indice) {
     const equipamento = todosEquipamentos.find(item => Number(item.id_equipamento) === Number(idEquipamento));
     const imagem = document.getElementById('fotoDetalheEquipamento');
-    if (equipamento?.fotos?.[indice] && imagem) imagem.src = `${API_BASE_URL}${equipamento.fotos[indice]}`;
+    if (equipamento?.fotos?.[indice] && imagem) imagem.src = `${resolverUrlImagem(equipamento.fotos[indice])}`;
 }
 
 function fecharDetalhesEquipamento() {
@@ -2348,7 +2379,7 @@ function mudarFoto(idEquipamento, direcao) {
     galeria.dataset.indice = indiceAtual;
 
     imagem.src =
-        `${API_BASE_URL}${equipamento.fotos[indiceAtual]}`;
+        `${resolverUrlImagem(equipamento.fotos[indiceAtual])}`;
 
     contador.textContent =
         `${indiceAtual + 1}/${equipamento.fotos.length}`;
@@ -2638,7 +2669,7 @@ function atualizarFotoAmpliada() {
     if (fotos.length === 0) return;
 
     imagemAmpliada.src =
-        `${API_BASE_URL}${fotos[indiceFotoAmpliada]}`;
+        `${resolverUrlImagem(fotos[indiceFotoAmpliada])}`;
 
     contadorModalFoto.textContent =
         `${indiceFotoAmpliada + 1}/${fotos.length}`;
