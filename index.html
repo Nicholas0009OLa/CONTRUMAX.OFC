@@ -24,7 +24,7 @@
 
   <a href="#" class="logo">
 
-    <div class="logo-icon">C</div>
+    <img class="logo-icon logo-icon-header" src="assets/logo-escavadeira.png" alt="Escavadeira CONSTRUMAX">
 
     <div>
       <div class="logo-text">
@@ -39,7 +39,11 @@
   </a>
 
 
-  <ul class="nav-links">
+  <button class="menu-mobile-toggle" id="menuMobileToggle" type="button" aria-label="Abrir menu" aria-controls="navLinksPrincipal" aria-expanded="false" onclick="alternarMenuMobile()">
+    <span></span><span></span><span></span>
+  </button>
+
+  <ul class="nav-links" id="navLinksPrincipal">
 
     <li>
       <a href="#inicio">Início</a>
@@ -74,6 +78,7 @@
       class="btn-chat-nav"
       onclick="openChat()">
       💬 Chat
+      <span id="badgeChatNotificacoes" class="badge-notificacao" hidden></span>
     </a>
 
 
@@ -97,8 +102,9 @@
             📋 Meus anúncios
         </a>
 
-        <a href="#" onclick="abrirMeusPedidos(); return false;">
+        <a id="navPedidosDropdown" href="#" onclick="abrirMeusPedidos(); return false;">
             📦 Meus pedidos
+            <span id="badgePedidosDropdown" class="badge-notificacao badge-notificacao-inline" hidden></span>
         </a>
 
         <div class="dropdown-divider"></div>
@@ -135,11 +141,7 @@
 
     <div class="modal-logo">
 
-      <div
-        class="logo-icon"
-        style="width:32px;height:32px;font-size:14px;">
-        C
-      </div>
+      <img class="logo-icon logo-icon-modal" src="assets/logo-escavadeira.png" alt="Escavadeira CONSTRUMAX">
 
       <div
         class="logo-text"
@@ -183,24 +185,28 @@
 
       <div class="mform-group">
 
-        <label>E-mail</label>
+        <label for="loginEmail">E-mail</label>
 
         <input
           type="email"
           id="loginEmail"
-          placeholder="seu@email.com">
+          placeholder="seu@email.com"
+          autocomplete="email">
 
       </div>
 
 
       <div class="mform-group">
 
-        <label>Senha</label>
-
-        <input
-          type="password"
-          id="loginSenha"
-          placeholder="••••••••">
+        <label for="loginSenha">Senha</label>
+        <div class="campo-senha">
+          <input
+            type="password"
+            id="loginSenha"
+            placeholder="••••••••"
+            autocomplete="current-password">
+          <button class="alternar-senha" type="button" aria-label="Mostrar senha" aria-pressed="false" onclick="alternarVisibilidadeSenha(this)" data-campo-senha="loginSenha"><span class="icone-olho" aria-hidden="true"></span></button>
+        </div>
 
       </div>
 
@@ -275,7 +281,7 @@
 
         <div class="mform-group">
 
-          <label>Nome</label>
+          <label for="nome">Nome</label>
 
           <input
             type="text"
@@ -286,25 +292,32 @@
 
         <div class="mform-group">
 
-          <label>Telefone</label>
+          <label for="telefone">Telefone</label>
 
           <input
             type="text"
-            id="telefone">
+            id="telefone"
+            inputmode="tel"
+            autocomplete="tel"
+            maxlength="15"
+            placeholder="(13) 99999-9999"
+            aria-describedby="telefoneAjuda">
 
         </div>
 
       </div>
 
+      <small id="telefoneAjuda" class="ajuda-campo-cadastro">Informe DDD e número: telefone fixo com 10 dígitos ou celular com 11.</small>
 
 
       <div class="mform-group">
 
-        <label>E-mail</label>
+        <label for="email">E-mail</label>
 
         <input
           type="email"
-          id="email">
+            id="email"
+            autocomplete="email">
 
       </div>
 
@@ -312,12 +325,14 @@
 
       <div class="mform-group">
 
-        <label>Senha</label>
-
-        <input
-          type="password"
-          id="senha">
-
+        <label for="senha">Senha</label>
+        <div class="campo-senha">
+          <input
+            type="password"
+            id="senha"
+            autocomplete="new-password">
+          <button class="alternar-senha" type="button" aria-label="Mostrar senha" aria-pressed="false" onclick="alternarVisibilidadeSenha(this)" data-campo-senha="senha"><span class="icone-olho" aria-hidden="true"></span></button>
+        </div>
       </div>
 
 
@@ -331,18 +346,23 @@
 
         <div class="mform-group">
 
-          <label>CPF/CNPJ</label>
+          <label for="cpfCnpj">CPF/CNPJ</label>
 
           <input
             type="text"
-            id="cpfCnpj">
+            id="cpfCnpj"
+            inputmode="numeric"
+            maxlength="18"
+            placeholder="CPF ou CNPJ"
+            aria-describedby="documentoAjuda">
+          <small id="documentoAjuda" class="ajuda-campo-cadastro">Informe um CPF válido (11 números) ou CNPJ válido (14 números).</small>
 
         </div>
 
 
         <div class="mform-group">
 
-          <label>Profissão</label>
+          <label for="profissao">Profissão</label>
 
           <input
             type="text"
@@ -355,7 +375,7 @@
 
           <div class="mform-group">
 
-            <label>Cidade</label>
+            <label for="cidade">Cidade</label>
 
             <input
               type="text"
@@ -366,7 +386,7 @@
 
           <div class="mform-group">
 
-            <label>Estado</label>
+            <label for="estado">Estado</label>
 
             <input
               type="text"
@@ -378,21 +398,20 @@
 
 
         <div class="mform-group">
-
-          <label>Valor da diária</label>
-
-          <input
-            type="number"
-            id="valorDiaria">
-
+          <label class="servico-valor-negociavel" for="valorNegociavelCadastro">
+            <input type="checkbox" id="valorNegociavelCadastro" onchange="alternarValorNegociavelCadastro()">
+            Valor a combinar
+          </label>
+          <label for="valorDiaria">Valor da diária</label>
+          <input type="number" id="valorDiaria" min="0" max="99999999.99" step="0.01" required>
         </div>
 
 
         <div class="mform-group">
 
-          <label>Descrição</label>
+          <label for="descricao">Descrição</label>
 
-          <textarea id="descricao"></textarea>
+          <textarea id="descricao" rows="5" placeholder="Conte sobre seus serviços, experiência e especialidades."></textarea>
 
         </div>
         
@@ -407,12 +426,11 @@
               multiple
           >
 
-          <small>Selecione até 5 imagens dos seus serviços.</small>
+          <small id="statusFotosPrestador">Selecione até 5 imagens dos seus serviços.</small>
 
           <div id="previewFotosPrestador"></div>
 
 </div>
-
 
       </div>
 
@@ -472,7 +490,7 @@
           </div>
 
           <div class="chat-header-status">
-            Online
+            Mensagens salvas na plataforma
           </div>
 
         </div>
@@ -513,14 +531,6 @@
       </div>
 
 
-      <div
-        class="chat-tab"
-        onclick="switchChatTab('novo')">
-
-        ✚ Nova Mensagem
-
-      </div>
-
     </div>
 
 
@@ -536,187 +546,8 @@
 
 
         <div id="chat-conv-list">
-
-
-          <div
-            class="chat-contact unread"
-            onclick="openConversation(
-              'Ricardo Santos',
-              'RS',
-              '#F5A800',
-              '#111'
-            )">
-
-            <div
-              class="chat-contact-avatar"
-              style="background:#F5A800;color:#111;">
-
-              RS
-
-            </div>
-
-
-            <div class="chat-contact-info">
-
-              <div class="chat-contact-top">
-
-                <div class="chat-contact-name">
-                  Ricardo Santos – Pedreiro
-                </div>
-
-                <div class="chat-contact-time">
-                  14:30
-                </div>
-
-              </div>
-
-
-              <div class="chat-contact-msg">
-                Boa tarde! A escavadeira ainda está disponível?
-              </div>
-
-            </div>
-
-
-            <div class="chat-unread-badge">
-              2
-            </div>
-
-          </div>
-
-
-
-          <div
-            class="chat-contact"
-            onclick="openConversation(
-              'Fernando Alves',
-              'FA',
-              '#1A1A1A',
-              '#F5A800'
-            )">
-
-            <div
-              class="chat-contact-avatar"
-              style="background:#1A1A1A;color:#F5A800;">
-
-              FA
-
-            </div>
-
-
-            <div class="chat-contact-info">
-
-              <div class="chat-contact-top">
-
-                <div class="chat-contact-name">
-                  Fernando Alves – Eletricista
-                </div>
-
-                <div class="chat-contact-time">
-                  11:45
-                </div>
-
-              </div>
-
-
-              <div class="chat-contact-msg">
-                Perfeito, qual o valor da diária?
-              </div>
-
-            </div>
-
-          </div>
-
-
-
-          <div
-            class="chat-contact"
-            onclick="openConversation(
-              'Carlos Pinto',
-              'CP',
-              '#F5A800',
-              '#111'
-            )">
-
-            <div
-              class="chat-contact-avatar"
-              style="background:#F5A800;color:#111;">
-
-              CP
-
-            </div>
-
-
-            <div class="chat-contact-info">
-
-              <div class="chat-contact-top">
-
-                <div class="chat-contact-name">
-                  Carlos Pinto – Pintor
-                </div>
-
-                <div class="chat-contact-time">
-                  Ontem
-                </div>
-
-              </div>
-
-
-              <div class="chat-contact-msg">
-                Pode me enviar as fotos do ambiente?
-              </div>
-
-            </div>
-
-          </div>
-
-
-
-          <div
-            class="chat-contact"
-            onclick="openConversation(
-              'Suporte CONSTRUMAX',
-              'SC',
-              '#F5A800',
-              '#111'
-            )">
-
-            <div
-              class="chat-contact-avatar"
-              style="background:#F5A800;color:#111;">
-
-              SC
-
-            </div>
-
-
-            <div class="chat-contact-info">
-
-              <div class="chat-contact-top">
-
-                <div class="chat-contact-name">
-                  Suporte CONSTRUMAX
-                </div>
-
-                <div class="chat-contact-time">
-                  2 dias
-                </div>
-
-              </div>
-
-
-              <div class="chat-contact-msg">
-                Olá! Como podemos ajudar?
-              </div>
-
-            </div>
-
-          </div>
-
-
+          <div class="chat-empty"><div class="chat-empty-icon">💬</div><div>Entre na sua conta para ver suas conversas.</div></div>
         </div>
-
-
 
         <!-- CONVERSA -->
 
@@ -737,61 +568,8 @@
           <div
             class="chat-messages"
             id="chat-messages-list">
-
-
-            <div class="msg recv">
-
-              <div class="msg-bubble">
-                Boa tarde! A escavadeira ainda está disponível para a próxima semana?
-              </div>
-
-              <div class="msg-time">
-                14:28
-              </div>
-
+              <div class="chat-empty-history">As mensagens desta conversa aparecerão aqui.</div>
             </div>
-
-
-            <div class="msg sent">
-
-              <div class="msg-bubble">
-                Olá João! Sim, está disponível. Qual o período que precisa?
-              </div>
-
-              <div class="msg-time">
-                14:29
-              </div>
-
-            </div>
-
-
-            <div class="msg recv">
-
-              <div class="msg-bubble">
-                Preciso de segunda a sexta, das 7h às 17h. Qual o valor?
-              </div>
-
-              <div class="msg-time">
-                14:29
-              </div>
-
-            </div>
-
-
-            <div class="msg sent">
-
-              <div class="msg-bubble">
-                O valor é R$ 1.200 a diária com operador incluso.
-              </div>
-
-              <div class="msg-time">
-                14:30
-              </div>
-
-            </div>
-
-
-          </div>
 
 
           <div class="chat-input-row">
@@ -800,6 +578,7 @@
               class="chat-input"
               id="chat-input-field"
               type="text"
+              maxlength="2000"
               placeholder="Digite sua mensagem..."
               onkeydown="sendOnEnter(event)">
 
@@ -837,123 +616,25 @@
           </div>
 
           <div>
-            Nossa equipe responde em até 2 horas nos dias úteis.
+            O atendimento por chat estará disponível em breve.
           </div>
 
 
           <button
             class="btn-prof-contact"
             style="margin-top:12px;width:auto;padding:10px 24px;"
-            onclick="openConversation('Suporte CONSTRUMAX','SC','#F5A800','#111');switchChatTab('conversas')">
+            type="button"
+            disabled>
 
-            Iniciar atendimento
-
-          </button>
-
-        </div>
-
-      </div>
-
-
-
-      <!-- NOVA MENSAGEM -->
-
-      <div
-        class="chat-list-panel"
-        id="chat-panel-novo">
-
-        <div style="padding:20px;">
-
-          <div class="mform-group">
-
-            <label style="color:#888;">
-              Para quem deseja enviar?
-            </label>
-
-
-            <select
-              style="
-                width:100%;
-                background:rgba(255,255,255,0.05);
-                border:1px solid rgba(255,255,255,0.1);
-                color:#fff;
-                padding:11px 14px;
-                font-size:13px;
-                font-family:Inter,sans-serif;
-                outline:none;
-                border-radius:0;
-              ">
-
-              <option value="">
-                Selecione um profissional ou serviço
-              </option>
-
-              <option>
-                Ricardo Santos – Pedreiro
-              </option>
-
-              <option>
-                Fernando Alves – Eletricista
-              </option>
-
-              <option>
-                Marcos Lima – Encanador
-              </option>
-
-              <option>
-                Carlos Pinto – Pintor
-              </option>
-
-              <option>
-                João Oliveira – Eng. Civil
-              </option>
-
-              <option>
-                Suporte CONSTRUMAX
-              </option>
-
-            </select>
-
-          </div>
-
-
-          <div class="mform-group">
-
-            <label style="color:#888;">
-              Mensagem
-            </label>
-
-            <textarea
-              style="
-                width:100%;
-                background:rgba(255,255,255,0.05);
-                border:1px solid rgba(255,255,255,0.1);
-                color:#fff;
-                padding:11px 14px;
-                font-size:13px;
-                font-family:Inter,sans-serif;
-                outline:none;
-                border-radius:0;
-                resize:vertical;
-                min-height:90px;
-              "
-              placeholder="Olá! Gostaria de...">
-            </textarea>
-
-          </div>
-
-
-          <button
-            class="btn-modal-submit"
-            style="margin-top:0;">
-
-            Enviar mensagem
+            Em breve
 
           </button>
 
         </div>
 
       </div>
+
+
 
     </div>
 
@@ -1390,6 +1071,17 @@
 
       </div>
 
+      <div class="form-row">
+        <div class="form-group">
+          <label for="cidadeEquipamento">Cidade onde o equipamento está localizado</label>
+          <input type="text" id="cidadeEquipamento" maxlength="100" placeholder="Ex.: Santos">
+        </div>
+        <div class="form-group">
+          <label for="estadoEquipamento">Estado</label>
+          <input type="text" id="estadoEquipamento" maxlength="50" placeholder="Ex.: SP">
+        </div>
+      </div>
+
 
 
       <div class="form-group">
@@ -1448,7 +1140,7 @@
                   multiple
               >
               
-                <small>Selecione até 5 fotos.</small>
+                <small id="statusFotosPrestador">Selecione até 5 fotos.</small>
 
                 <div id="contadorFotos" style="margin-top: 10px;">
                   📸 0/5 fotos selecionadas
@@ -1521,19 +1213,22 @@
 
   <!-- BUSCA DE EQUIPAMENTOS -->
 
-  <div style="margin-bottom:30px;">
+  <form class="busca-equipamentos" id="formBuscaEquipamentos" onsubmit="filtrarEquipamentos(event)">
+    <label class="busca-equipamentos-termo">
+      Equipamento ou tipo
+      <input type="search" id="buscaEquipamento" placeholder="Ex.: betoneira, andaime">
+    </label>
+    <label>
+      Cidade ou estado
+      <input type="search" id="buscaCidadeEquipamento" placeholder="Ex.: Santos ou SP">
+    </label>
+    <div class="busca-equipamentos-acoes">
+      <button type="submit" class="btn-primary">Buscar equipamentos</button>
+      <button type="button" class="btn-filtro-limpar" onclick="limparBuscaEquipamentos()">Limpar filtros</button>
+    </div>
+  </form>
 
-    <input
-      type="text"
-      id="buscaEquipamento"
-      placeholder="Buscar equipamento ou tipo..."
-      style="
-        width:100%;
-        padding:15px;
-        font-size:16px;
-      ">
-
-  </div>
+  <p id="resultadoBuscaEquipamentos" class="resultado-busca-equipamentos" aria-live="polite"></p>
 
 
 
@@ -1585,19 +1280,17 @@
 
 
 
-  <div style="margin-bottom:30px;">
-
-    <input
-      type="text"
-      id="buscaProfissional"
-      placeholder="Buscar profissão ou cidade..."
-      style="
-        width:100%;
-        padding:15px;
-        font-size:16px;
-      ">
-
-  </div>
+  <form class="busca-profissionais" id="formBuscaProfissionais" onsubmit="buscarPrestadores(event)">
+    <label>
+      Serviço ou profissão
+      <input type="search" id="buscaProfissional" placeholder="Ex.: pedreiro, eletricista, pintor">
+    </label>
+    <label>
+      Cidade ou estado
+      <input type="search" id="buscaCidadeProfissional" placeholder="Ex.: Santos ou SP">
+    </label>
+    <button type="submit" class="btn-primary">Buscar profissionais</button>
+  </form>
 
 
 
@@ -1618,15 +1311,28 @@
     <a
       href="#"
       class="btn-primary"
-      onclick="openModal('cadastro');return false;">
+      onclick="limparBuscaPrestadores();return false;">
 
-      Ver todos os profissionais
+      Limpar filtros
 
     </a>
 
   </div>
 
 </section>
+
+<div id="modalPerfilPrestador" class="modal-perfil-prestador" aria-hidden="true"></div>
+
+<div id="modalSolicitacao" class="solicitacao-overlay" aria-hidden="true" onclick="fecharSolicitacaoFora(event)">
+  <section class="solicitacao-modal" role="dialog" aria-modal="true" aria-labelledby="solicitacaoTitulo">
+    <button type="button" class="solicitacao-fechar" onclick="fecharSolicitacao()" aria-label="Fechar">×</button>
+    <div id="solicitacaoConteudo"></div>
+  </section>
+</div>
+
+<div id="modalEquipamentoDetalhe" class="equipamento-detalhe-overlay" aria-hidden="true" onclick="fecharDetalhesEquipamentoFora(event)">
+  <section id="equipamentoDetalheConteudo" class="equipamento-detalhe-modal" role="dialog" aria-modal="true" aria-labelledby="equipamentoDetalheTitulo"></section>
+</div>
 
 
 
@@ -2145,9 +1851,7 @@
           display:inline-flex;
         ">
 
-        <div class="logo-icon">
-          C
-        </div>
+        <img class="logo-icon logo-icon-footer" src="assets/logo-escavadeira.png" alt="Escavadeira CONSTRUMAX">
 
 
         <div>
@@ -2453,10 +2157,17 @@
                     📋 Meus anúncios
                 </button>
 
-                <button class="painel-nav-btn"
+                <button id="nav-pedidos" class="painel-nav-btn"
                         onclick="mostrarSecaoPainel('pedidos')">
                     📦 Meus pedidos
+                    <span id="badgePedidosPainel" class="badge-notificacao" hidden></span>
                 </button>
+
+                <button class="painel-nav-btn admin-nav-btn" data-admin="dashboard" onclick="mostrarSecaoPainel('admin-dashboard')" hidden>📊 Visão geral</button>
+                <button class="painel-nav-btn admin-nav-btn" data-admin="usuarios" onclick="mostrarSecaoPainel('admin-usuarios')" hidden>👥 Usuários</button>
+                <button class="painel-nav-btn admin-nav-btn" data-admin="prestadores" onclick="mostrarSecaoPainel('admin-prestadores')" hidden>🦺 Prestadores</button>
+                <button class="painel-nav-btn admin-nav-btn" data-admin="equipamentos" onclick="mostrarSecaoPainel('admin-equipamentos')" hidden>🚜 Equipamentos</button>
+                <button class="painel-nav-btn admin-nav-btn" data-admin="avaliacoes" onclick="mostrarSecaoPainel('admin-avaliacoes')" hidden>⭐ Avaliações</button>
 
                 <div class="painel-sidebar-divider"></div>
 
