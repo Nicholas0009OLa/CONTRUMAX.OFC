@@ -1865,18 +1865,19 @@ function renderizarPrestadores(prestadores) {
         const avaliacao = totalAvaliacoes > 0 && Number.isFinite(nota)
             ? `⭐ ${nota.toFixed(1)} <span>(${totalAvaliacoes} avaliações)</span>`
             : '<span class="sem-avaliacoes">Ainda sem avaliações</span>';
-        const tags = especialidades.length
-            ? especialidades.map(item => `<span class="prof-tag">${escaparHTML(item)}</span>`).join("")
-            : `<span class="prof-tag">${profissao}</span>`;
+        const seloVerificado = verificado ? '<div class="prof-verified">✓ Verificado</div>' : '';
+        const tagsHtml = especialidades.length
+            ? `<div class="prof-tags">${especialidades.map(item => `<span class="prof-tag">${escaparHTML(item)}</span>`).join("")}</div>`
+            : '';
 
         const precoHtml = prestador.valor_negociavel
             ? '<span class="prof-price">Valor a combinar</span>'
             : `<span class="prof-price">${prestador.valor_diaria == null ? 'Consulte' : `R$ ${escaparHTML(Number(prestador.valor_diaria).toLocaleString('pt-BR', { minimumFractionDigits: 2 }))}`}<small>${prestador.valor_diaria == null ? '' : '/ dia'}</small></span>`;
         return `<article class="prof-card">
-            <div class="prof-verified ${verificado ? "" : "prof-cadastrado"}">${verificado ? "✓ Verificado" : "Perfil cadastrado"}</div>
+            ${seloVerificado}
             <div class="prof-header">${galeriaFotos}<div class="prof-meta"><div class="prof-name">${nome}</div><div class="prof-role">${profissao}</div></div></div>
             <div class="prof-stars">${avaliacao}</div>
-            <div class="prof-tags">${tags}</div>
+            ${tagsHtml}
             <div class="prof-info"><div class="prof-location">📍 ${escaparHTML(prestador.cidade)} - ${escaparHTML(prestador.estado)}</div>${precoHtml}</div>
             <button class="btn-prof-contact" type="button" onclick="abrirPerfilPrestador(${id}, ${idServico || 'null'})">Ver perfil</button>
         </article>`;
@@ -2731,44 +2732,20 @@ function atualizarPreviewFotos() {
     preview.innerHTML = "";
 
     fotosSelecionadas.forEach((foto, index) => {
-
         const div = document.createElement("div");
+        div.className = "equipamento-preview-item";
 
-        div.style.position = "relative";
-        div.style.width = "100px";
-        div.style.height = "100px";
+        const imagem = document.createElement("img");
+        imagem.src = URL.createObjectURL(foto);
+        imagem.alt = `Prévia da foto ${index + 1}`;
+        div.appendChild(imagem);
 
-        div.innerHTML = `
-            <img
-                src="${URL.createObjectURL(foto)}"
-                style="
-                    width: 100px;
-                    height: 100px;
-                    object-fit: cover;
-                    border-radius: 8px;
-                "
-            >
-
-            <button
-                type="button"
-                onclick="removerFoto(${index})"
-                style="
-                    position: absolute;
-                    top: 5px;
-                    right: 5px;
-                    width: 24px;
-                    height: 24px;
-                    border: none;
-                    border-radius: 50%;
-                    background: #000;
-                    color: #fff;
-                    cursor: pointer;
-                    font-weight: bold;
-                "
-            >
-                ×
-            </button>
-        `;
+        const botaoRemover = document.createElement("button");
+        botaoRemover.type = "button";
+        botaoRemover.setAttribute("aria-label", `Remover foto ${index + 1}`);
+        botaoRemover.textContent = "×";
+        botaoRemover.addEventListener("click", () => removerFoto(index));
+        div.appendChild(botaoRemover);
 
         preview.appendChild(div);
     });

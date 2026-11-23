@@ -1016,195 +1016,56 @@
 
   <div
     id="formularioEquipamento"
-    style="display:none;margin-bottom:30px;">
+    class="cadastro-equipamento" style="display:none;">
+    <div class="cadastro-equipamento-card">
+      <h3 class="cadastro-equipamento-titulo">Cadastrar equipamento</h3>
 
-
-    <div
-      style="
-        background:#111;
-        padding:25px;
-        border:1px solid rgba(255,255,255,0.1);
-      ">
-
-
-      <h3
-        style="
-          color:#fff;
-          margin-bottom:20px;
-        ">
-
-        Cadastrar Equipamento
-
-      </h3>
-
-
-
-      <div class="form-row">
-
-
+      <div class="cadastro-equipamento-campos">
         <div class="form-group">
-
-          <label>
-            Nome do equipamento
-          </label>
-
-          <input
-            type="text"
-            id="nomeEquipamento"
-            placeholder="Ex: Betoneira 400L">
-
+          <label for="nomeEquipamento">Nome do equipamento</label>
+          <input type="text" id="nomeEquipamento" placeholder="Ex.: Betoneira 400 L">
+        </div>
+        <div class="form-group">
+          <label for="tipoEquipamento">Tipo do equipamento</label>
+          <input type="text" id="tipoEquipamento" placeholder="Ex.: Betoneira">
         </div>
 
-
         <div class="form-group">
-
-          <label>
-            Tipo do equipamento
-          </label>
-
-          <input
-            type="text"
-            id="tipoEquipamento"
-            placeholder="Ex: Betoneira">
-
-        </div>
-
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label for="cidadeEquipamento">Cidade onde o equipamento está localizado</label>
+          <label for="cidadeEquipamento">Cidade onde está localizado</label>
           <input type="text" id="cidadeEquipamento" maxlength="100" placeholder="Ex.: Santos">
         </div>
         <div class="form-group">
           <label for="estadoEquipamento">Estado</label>
           <input type="text" id="estadoEquipamento" maxlength="50" placeholder="Ex.: SP">
         </div>
-      </div>
 
-
-
-      <div class="form-group">
-
-        <label>
-          Descrição
-        </label>
-
-        <textarea
-          id="descricaoEquipamento"
-          placeholder="Descreva o equipamento...">
-        </textarea>
-
-      </div>
-
-
-
-      <div class="form-row">
-
-
-        <div class="form-group">
-
-          <label>
-            Valor da diária
-          </label>
-
-          <input
-            type="number"
-            id="valorDiariaEquipamento"
-            placeholder="Ex: 150"
-            step="0.01">
-
+        <div class="form-group cadastro-equipamento-largura-total">
+          <label for="descricaoEquipamento">Descrição</label>
+          <textarea id="descricaoEquipamento" placeholder="Descreva o equipamento..."></textarea>
         </div>
 
-
         <div class="form-group">
-
-          <label>
-            Quantidade
-          </label>
-
-          <input
-            type="number"
-            id="quantidadeEquipamento"
-            placeholder="Ex: 2"
-            min="1">
-
+          <label for="valorDiariaEquipamento">Valor da diária</label>
+          <input type="number" id="valorDiariaEquipamento" placeholder="Ex.: 150,00" step="0.01">
         </div>
-      
-          <div class="form-group">
-              <label for="fotosEquipamento">Fotos do equipamento</label>
-              <input
-                  type="file"
-                  id="fotosEquipamento"
-                  accept="image/*"
-                  multiple
-              >
-              
-                <small id="statusFotosPrestador">Selecione até 5 fotos.</small>
+        <div class="form-group">
+          <label for="quantidadeEquipamento">Quantidade</label>
+          <input type="number" id="quantidadeEquipamento" placeholder="Ex.: 2" min="1">
+        </div>
 
-                <div id="contadorFotos" style="margin-top: 10px;">
-                  📸 0/5 fotos selecionadas
-                </div>
-                <div
-                    id="previewFotos"
-                    style="
-                        display: flex;
-                        gap: 10px;
-                        flex-wrap: wrap;
-                        margin-top: 15px;
-                    "
-                ></div>
-
-            
-            
-            
-            
-            </div>
-
-
-        
-
-      
+        <div class="form-group cadastro-equipamento-upload cadastro-equipamento-largura-total">
+          <label for="fotosEquipamento">Fotos do equipamento</label>
+          <input type="file" id="fotosEquipamento" accept="image/*" multiple>
+          <small id="statusFotosEquipamento">Selecione até 5 fotos.</small>
+          <div id="contadorFotos" class="cadastro-equipamento-contador">📸 0/5 fotos selecionadas</div>
+          <div id="previewFotos" class="cadastro-equipamento-preview"></div>
+        </div>
       </div>
 
-
-
-      <div
-        style="
-          display:flex;
-          gap:10px;
-          margin-top:20px;
-        ">
-
-
-        <button
-          class="btn-primary"
-          onclick="cadastrarEquipamento()"
-          style="cursor:pointer;">
-
-          Cadastrar Equipamento
-
-        </button>
-
-
-        <button
-          type="button"
-          onclick="fecharCadastroEquipamento()"
-          style="
-            padding:12px 20px;
-            background:#333;
-            color:#fff;
-            border:none;
-            cursor:pointer;
-          ">
-
-          Cancelar
-
-        </button>
-
+      <div class="cadastro-equipamento-acoes">
+        <button type="button" class="btn-primary" onclick="cadastrarEquipamento()">Cadastrar equipamento</button>
+        <button type="button" class="cadastro-equipamento-cancelar" onclick="fecharCadastroEquipamento()">Cancelar</button>
       </div>
-
-
     </div>
 
   </div>
@@ -1582,7 +1443,7 @@
           </div>
 
           <div>
-            (13) 99999-9999
+            (13) 9890-5535
           </div>
 
         </div>
@@ -1611,7 +1472,7 @@
           </div>
 
           <div>
-            (13) 99999-9999
+            (13) 98876-3471
           </div>
 
         </div>
@@ -1669,7 +1530,7 @@
           </div>
 
           <div>
-            Rua das Construções, 193 – Praia Grande, SP
+            Av. Bellodante Maria, 193 – Praia Grande, SP
           </div>
 
         </div>
@@ -1681,136 +1542,115 @@
 
   </div>
 
+  <aside class="faq-panel" aria-labelledby="faqTitulo">
+    <div class="section-label">Dúvidas frequentes</div>
+    <h2 class="faq-titulo" id="faqTitulo">Como podemos ajudar?</h2>
+    <p class="faq-intro">Encontre respostas sobre busca, solicitações e uso da CONSTRUMAX.</p>
 
+    <div class="faq-lista">
+      <details class="faq-grupo">
+        <summary>Sobre a plataforma <span>4 perguntas</span></summary>
+        <div class="faq-grupo-conteudo">
+      <details class="faq-item">
+        <summary>O que é a CONSTRUMAX?</summary>
+        <p>A CONSTRUMAX conecta contratantes a profissionais autônomos da construção civil e permite buscar máquinas para locação.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Quem pode usar a plataforma?</summary>
+        <p>Contratantes podem buscar profissionais e equipamentos. Prestadores podem divulgar serviços ou máquinas, e administradores gerenciam a plataforma pelo painel administrativo.</p>
+      </details>
+      <details class="faq-item">
+        <summary>A CONSTRUMAX garante a qualidade do serviço ou equipamento?</summary>
+        <p>A plataforma facilita o contato, mas não garante a qualidade, a disponibilidade ou o resultado. Confira o anúncio e converse com o prestador antes de combinar.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Como posso avaliar um profissional ou serviço?</summary>
+        <p>Após confirmar a conclusão do serviço, o contratante pode deixar uma nota e, se quiser, um comentário.</p>
+      </details>
+        </div>
+      </details>
 
-  <div class="contact-form">
+      <details class="faq-grupo">
+        <summary>Uso <span>7 perguntas</span></summary>
+        <div class="faq-grupo-conteudo">
+      <details class="faq-item">
+        <summary>Como encontro um profissional ou uma máquina?</summary>
+        <p>Pesquise pela profissão ou tipo de equipamento e informe a cidade e o estado. A busca não usa geolocalização nem calcula distâncias.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Como solicito um serviço ou aluguel?</summary>
+        <p>Abra o perfil do profissional ou o anúncio do equipamento e envie uma solicitação pela plataforma. O sistema evita registrar solicitações repetidas da mesma ação.</p>
+      </details>
+      <details class="faq-item">
+        <summary>O que acontece depois que envio uma solicitação?</summary>
+        <p>O prestador pode aceitar ou recusar o pedido. Combine os detalhes pelo chat e confirme as condições diretamente com ele.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Posso conversar com o prestador pela plataforma?</summary>
+        <p>Sim. A CONSTRUMAX oferece chat para comunicação entre contratantes e prestadores.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Como vejo se recebi uma mensagem ou notificação?</summary>
+        <p>A plataforma disponibiliza notificações sobre atividades, como mensagens. Consulte a área correspondente para ver os detalhes.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Posso editar ou remover meu anúncio?</summary>
+        <p>Anúncios podem ser desativados. Eles deixam de aparecer na busca pública, mas o histórico relacionado é preservado.</p>
+      </details>
+      <details class="faq-item">
+        <summary>A CONSTRUMAX processa pagamentos?</summary>
+        <p>Não. A plataforma não oferece pagamentos integrados; valores e formas de pagamento devem ser combinados entre as partes.</p>
+      </details>
+        </div>
+      </details>
 
+      <details class="faq-grupo">
+        <summary>Segurança e dados <span>5 perguntas</span></summary>
+        <div class="faq-grupo-conteudo">
+      <details class="faq-item">
+        <summary>Como posso avaliar se um prestador é confiável?</summary>
+        <p>Consulte as informações do perfil e as avaliações disponíveis, e converse com o profissional antes de fechar um acordo. A decisão de contratar é sua.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Como minhas fotos são armazenadas?</summary>
+        <p>As imagens enviadas são armazenadas no Supabase Storage. São aceitos JPEG, PNG e WebP, com limite de 5 MB por imagem.</p>
+      </details>
+      <details class="faq-item">
+        <summary>O que acontece com o histórico quando um anúncio é desativado?</summary>
+        <p>A desativação retira o anúncio da busca pública, mas preserva o histórico relacionado.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Existe uma política de privacidade publicada?</summary>
+        <p>No momento, a plataforma não possui uma política de privacidade ou documentação sobre LGPD publicada. Entre em contato com a CONSTRUMAX se tiver dúvidas sobre o tratamento de dados.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Como as senhas são protegidas?</summary>
+        <p>O método de armazenamento e proteção das senhas não está confirmado nesta documentação. Se tiver dúvidas sobre sua conta, entre em contato com a administração.</p>
+      </details>
+        </div>
+      </details>
 
-    <div class="form-row">
-
-
-      <div class="form-group">
-
-        <label>
-          Nome completo
-        </label>
-
-        <input
-          type="text"
-          placeholder="Seu nome">
-
-      </div>
-
-
-      <div class="form-group">
-
-        <label>
-          Telefone / WhatsApp
-        </label>
-
-        <input
-          type="text"
-          placeholder="(00) 00000-0000">
-
-      </div>
-
-
+      <details class="faq-grupo">
+        <summary>Técnicas <span>3 perguntas</span></summary>
+        <div class="faq-grupo-conteudo">
+      <details class="faq-item">
+        <summary>Por que posso precisar entrar novamente na minha conta?</summary>
+        <p>As sessões são mantidas em memória no servidor. Quando o backend reinicia, pode ser necessário entrar novamente.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Quais tecnologias mantêm a plataforma funcionando?</summary>
+        <p>A interface usa HTML, CSS e JavaScript; o backend usa Node.js e Express. Os dados ficam no TiDB Cloud, as imagens no Supabase Storage e o backend é hospedado no Render.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Como reporto um problema técnico?</summary>
+        <p>Entre em contato com a equipe da CONSTRUMAX e informe o que estava fazendo, quando ocorreu e, se possível, a mensagem de erro. Não envie senhas ou tokens.</p>
+      </details>
+        </div>
+      </details>
     </div>
+  </aside>
 
 
-
-    <div class="form-group">
-
-      <label>
-        Serviço desejado
-      </label>
-
-
-      <select>
-
-        <option value="">
-          Selecione um serviço
-        </option>
-
-        <option>
-          Locação de Escavadeira
-        </option>
-
-        <option>
-          Locação de Retroescavadeira
-        </option>
-
-        <option>
-          Locação de Bobcat
-        </option>
-
-        <option>
-          Locação de Compactador
-        </option>
-
-        <option>
-          Locação de Caminhão Basculante
-        </option>
-
-        <option>
-          Contratar Pedreiro
-        </option>
-
-        <option>
-          Contratar Eletricista
-        </option>
-
-        <option>
-          Contratar Encanador
-        </option>
-
-        <option>
-          Contratar Pintor
-        </option>
-
-        <option>
-          Terraplanagem
-        </option>
-
-        <option>
-          Construção Civil
-        </option>
-
-        <option>
-          Reformas
-        </option>
-
-        <option>
-          Outros
-        </option>
-
-      </select>
-
-    </div>
-
-
-
-    <div class="form-group">
-
-      <label>
-        Mensagem
-      </label>
-
-      <textarea
-        placeholder="Descreva sua necessidade, localização da obra, período...">
-      </textarea>
-
-    </div>
-
-
-    <button class="btn-submit">
-
-      📋 Enviar Orçamento
-
-    </button>
-
-
-  </div>
 
 </section>
 
@@ -1896,158 +1736,6 @@
 
 
 
-    <div class="footer-col">
-
-      <h4>
-        Navegação
-      </h4>
-
-
-      <ul class="footer-links">
-
-        <li>
-          <a href="#inicio">
-            Início
-          </a>
-        </li>
-
-        <li>
-          <a href="#servicos">
-            Serviços
-          </a>
-        </li>
-
-        <li>
-          <a href="#maquinas">
-            Máquinas
-          </a>
-        </li>
-
-        <li>
-          <a href="#profissionais">
-            Profissionais
-          </a>
-        </li>
-
-        <li>
-          <a href="#sobre">
-            Quem Somos
-          </a>
-        </li>
-
-        <li>
-          <a href="#contato">
-            Contato
-          </a>
-        </li>
-
-      </ul>
-
-    </div>
-
-
-
-    <div class="footer-col">
-
-      <h4>
-        Serviços
-      </h4>
-
-
-      <ul class="footer-links">
-
-        <li>
-          <a href="#">
-            Construção Civil
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            Terraplanagem
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            Reformas
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            Locação Máquinas
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            Pedreiros
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            Eletricistas
-          </a>
-        </li>
-
-      </ul>
-
-    </div>
-
-
-
-    <div class="footer-col">
-
-      <h4>
-        Contato
-      </h4>
-
-
-      <ul class="footer-links">
-
-        <li>
-          <a href="#">
-            (13) 99999-9999
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            contato@construmax.com.br
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            Rua das Construções, 193
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            Praia Grande – SP
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            Seg–Sex: 8h às 18h
-          </a>
-        </li>
-
-        <li>
-          <a href="#">
-            Sábado: 8h às 12h
-          </a>
-        </li>
-
-      </ul>
-
-    </div>
-
-
   </div>
 
 
@@ -2055,7 +1743,7 @@
   <div class="footer-bottom">
 
     <p>
-      © 2024 CONSTRUMAX. Todos os direitos reservados.
+      © 2026 CONSTRUMAX. Todos os direitos reservados.
     </p>
 
   </div>
