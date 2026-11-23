@@ -1266,10 +1266,10 @@
 
 .busca-profissionais {
     display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: end;
     gap: 14px;
-    margin-bottom: 30px;
+    margin-bottom: 14px;
     padding: 18px;
     border: 1px solid #dedede;
     border-radius: 8px;
@@ -1281,6 +1281,10 @@
 .busca-profissionais input:focus { outline: 1px solid var(--yellow); border-color: var(--yellow); }
 .busca-profissionais input::placeholder { color: #888; }
 .busca-profissionais button:disabled { opacity: .6; cursor: wait; }
+.busca-profissionais-acoes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 2px; }
+.busca-profissionais-acoes .btn-primary { justify-content: center; min-height: 44px; padding: 11px 20px; cursor: pointer; }
+.busca-profissionais .btn-filtro-limpar { border-color: #d0d0d0; color: #555; }
+.busca-profissionais .btn-filtro-limpar:hover { border-color: var(--yellow); color: #8a6500; }
 .busca-sem-resultados { grid-column: 1 / -1; padding: 30px 18px; border: 1px solid #333; border-radius: 7px; color: #aaa; text-align: center; }
 .busca-sem-resultados h3 { margin-bottom: 8px; color: #eee; }
 .prof-cadastrado { color: #bbb; }
@@ -1364,7 +1368,8 @@ body.perfil-aberto { overflow: hidden; }
 
 @media (max-width: 760px) {
     .busca-profissionais { grid-template-columns: 1fr; }
-    .busca-profissionais .btn-primary { justify-content: center; }
+    .busca-profissionais-acoes { display: grid; grid-template-columns: 1fr 1fr; }
+    .busca-profissionais-acoes .btn-primary, .busca-profissionais .btn-filtro-limpar { width: 100%; padding-right: 8px; padding-left: 8px; font-size: 11px; }
     .modal-perfil-prestador.ativo { padding: 10px; }
     .perfil-modal-conteudo { max-height: 96vh; padding: 54px 18px 22px; border-radius: 12px; }
     .perfil-topo { grid-template-columns: 105px minmax(0, 1fr); gap: 14px; padding: 0; }
@@ -1560,5 +1565,6 @@ body.perfil-aberto { overflow: hidden; }
     .btn-chat-nav { padding: 7px 8px; font-size: 11px; }
     .btn-login, .btn-cadastro { padding: 7px 9px; font-size: 11px; }
     .busca-equipamentos-acoes { grid-template-columns: 1fr; }
+    .busca-profissionais-acoes { grid-template-columns: 1fr; }
     .about-badge { right: 8px; bottom: -10px; }
 }

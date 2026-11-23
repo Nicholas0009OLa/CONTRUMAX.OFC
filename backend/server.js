@@ -750,7 +750,55 @@ app.get('/servicos/anuncios', async (req, res) => {
              ORDER BY s.id_servico DESC`,
             parametros
         );
-        return res.json(servicos.map(item => ({
+        const filtrosPrestadores = ['NOT EXISTS (SELECT 1 FROM servicos s WHERE s.id_prestador = p.id_prestador)', 'p.admin_ativo = 1', 'u.ativo = 1'];
+        const parametrosPrestadores = [];
+        if (servicoBusca) {
+            filtrosPrestadores.push(`(
+                LOWER(p.profissao) LIKE LOWER(?)
+                OR EXISTS (
+                    SELECT 1 FROM prestador_especialidade pe
+                    INNER JOIN especialidades e ON e.id_especialidade = pe.id_especialidade
+                    WHERE pe.id_prestador = p.id_prestador AND LOWER(e.nome) LIKE LOWER(?)
+                )
+            )`);
+            parametrosPrestadores.push(`%${servicoBusca}%`, `%${servicoBusca}%`);
+        }
+        if (cidadeBusca) {
+            const partes = cidadeBusca.split(',').map(parte => parte.trim()).filter(Boolean);
+            if (partes.length > 1) {
+                filtrosPrestadores.push('(LOWER(COALESCE(p.cidade, \'\')) LIKE LOWER(?) AND LOWER(COALESCE(p.estado, \'\')) LIKE LOWER(?))');
+                parametrosPrestadores.push(`%${partes[0]}%`, `%${partes.slice(1).join(' ')}%`);
+            } else {
+                filtrosPrestadores.push('(LOWER(COALESCE(p.cidade, \'\')) LIKE LOWER(?) OR LOWER(COALESCE(p.estado, \'\')) LIKE LOWER(?))');
+                parametrosPrestadores.push(`%${cidadeBusca}%`, `%${cidadeBusca}%`);
+            }
+        }
+        const prestadoresSemAnuncio = await consultar(
+            `SELECT p.id_prestador, NULL AS id_servico, p.profissao, p.descricao,
+                    p.valor_diaria, (p.valor_diaria IS NULL) AS valor_negociavel,
+                    1 AS disponivel, p.cidade, p.estado,
+                    (SELECT GROUP_CONCAT(DISTINCT e.nome SEPARATOR '|||')
+                     FROM prestador_especialidade pe
+                     INNER JOIN especialidades e ON e.id_especialidade = pe.id_especialidade
+                     WHERE pe.id_prestador = p.id_prestador) AS especialidades,
+                    p.verificado, p.admin_ativo, p.valor_diaria AS valor_diaria_perfil,
+                    p.avaliacao, p.total_avaliacoes, u.nome, u.telefone, u.foto_perfil, p.foto,
+                    (SELECT AVG(a.nota) FROM avaliacoes_solicitacoes a
+                     WHERE a.id_prestador = p.id_prestador AND a.alvo = 'PRESTADOR'
+                       AND a.nota IS NOT NULL AND a.moderacao_status = 'VISIVEL') AS nota_media_avaliacoes,
+                    (SELECT COUNT(*) FROM avaliacoes_solicitacoes a
+                     WHERE a.id_prestador = p.id_prestador AND a.alvo = 'PRESTADOR'
+                       AND a.nota IS NOT NULL AND a.moderacao_status = 'VISIVEL') AS total_notas_avaliacoes,
+                    NULL AS fotos,
+                    (SELECT GROUP_CONCAT(fp.url_foto ORDER BY fp.id_foto SEPARATOR '|||')
+                     FROM fotos_prestadores fp WHERE fp.id_prestador = p.id_prestador) AS fotos_trabalhos
+             FROM prestadores p
+             INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+             WHERE ${filtrosPrestadores.join(' AND ')}
+             ORDER BY p.id_prestador DESC`,
+            parametrosPrestadores
+        );
+        const anuncios = servicos.map(item => ({
             ...item,
             id_servico: Number(item.id_servico),
             id_prestador: Number(item.id_prestador),
@@ -763,7 +811,21 @@ app.get('/servicos/anuncios', async (req, res) => {
             especialidades: normalizarListaEspecialidades(item.especialidades),
             fotos: dividirListaAgregada(item.fotos),
             fotos_trabalhos: dividirListaAgregada(item.fotos_trabalhos)
-        })));
+        }));
+        const perfisSemAnuncio = prestadoresSemAnuncio.map(item => ({
+            ...item,
+            id_prestador: Number(item.id_prestador),
+            id_servico: null,
+            valor_negociavel: Number(item.valor_negociavel) === 1,
+            avaliacao: item.nota_media_avaliacoes !== null && item.nota_media_avaliacoes !== undefined
+                ? Number(item.nota_media_avaliacoes) : item.avaliacao,
+            total_avaliacoes: Number(item.total_notas_avaliacoes) > 0
+                ? Number(item.total_notas_avaliacoes) : Number(item.total_avaliacoes) || 0,
+            especialidades: normalizarListaEspecialidades(dividirListaAgregada(item.especialidades)),
+            fotos: [],
+            fotos_trabalhos: dividirListaAgregada(item.fotos_trabalhos)
+        }));
+        return res.json([...anuncios, ...perfisSemAnuncio]);
     } catch (erro) {
         console.error('ERRO AO LISTAR ANUNCIOS DE SERVICOS:', erro.code || erro.message);
         return res.status(500).json({ sucesso: false, mensagem: 'Nao foi possivel carregar os servicos.' });

@@ -1289,7 +1289,10 @@
       Cidade ou estado
       <input type="search" id="buscaCidadeProfissional" placeholder="Ex.: Santos ou SP">
     </label>
-    <button type="submit" class="btn-primary">Buscar profissionais</button>
+    <div class="busca-profissionais-acoes">
+      <button type="submit" class="btn-primary">Buscar profissionais</button>
+      <button type="button" class="btn-filtro-limpar" onclick="limparBuscaPrestadores()">Limpar filtros</button>
+    </div>
   </form>
 
 
@@ -1301,23 +1304,6 @@
   </div>
 
 
-
-  <div
-    style="
-      text-align:center;
-      margin-top:40px;
-    ">
-
-    <a
-      href="#"
-      class="btn-primary"
-      onclick="limparBuscaPrestadores();return false;">
-
-      Limpar filtros
-
-    </a>
-
-  </div>
 
 </section>
 
