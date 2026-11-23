@@ -26,7 +26,7 @@ function resolverUrlImagem(referencia) {
     if (/^(?:https?:|blob:|data:)/i.test(caminho)) return caminho;
     if (caminho.startsWith('/uploads/')) return `${API_BASE_URL}${caminho}`;
     if (BASE_PUBLICA_IMAGENS_SUPABASE &&
-        /^(?:prestadores\/\d+\/(?:perfil|trabalhos)|equipamentos\/\d+|usuarios\/\d+\/perfil)\/[a-f0-9-]{36}\.[a-z0-9]{1,8}$/i.test(caminho)) {
+        /^(?:prestadores\/\d+\/(?:perfil|trabalhos)|equipamentos\/\d+|servicos\/\d+|usuarios\/\d+\/perfil)\/[a-f0-9-]{36}\.[a-z0-9]{1,8}$/i.test(caminho)) {
         return `${BASE_PUBLICA_IMAGENS_SUPABASE}/${caminho.split('/').map(encodeURIComponent).join('/')}`;
     }
     return '';
@@ -463,6 +463,7 @@ let fotosCadastroPrestador = [];
 function inicializarCamposCadastro() {
     anexarMascaraNumerica(document.getElementById('telefone'), mascararTelefoneBrasil);
     anexarMascaraNumerica(document.getElementById('cpfCnpj'), mascararCpfCnpj);
+    alternarValorNegociavelCadastro();
     document.getElementById('fotosPrestador')?.addEventListener('change', evento => {
         const novas = Array.from(evento.currentTarget.files || []);
         const vagas = Math.max(0, 5 - fotosCadastroPrestador.length);
@@ -471,6 +472,15 @@ function inicializarCamposCadastro() {
         evento.currentTarget.value = '';
         renderizarPreviewFotosCadastro();
     });
+}
+
+function alternarValorNegociavelCadastro() {
+    const negociavel = document.getElementById('valorNegociavelCadastro');
+    const valor = document.getElementById('valorDiaria');
+    if (!negociavel || !valor) return;
+    valor.disabled = negociavel.checked;
+    valor.required = !negociavel.checked;
+    if (negociavel.checked) valor.value = '';
 }
 
 function removerFotoCadastroPrestador(indice) {
@@ -539,6 +549,11 @@ function validarFormularioCadastro(tipoUsuario) {
             if (!document.getElementById(id).value.trim()) {
                 mostrarErroCadastro(`Informe sua ${rotulo}.`, id); return false;
             }
+        }
+        const valor = document.getElementById('valorDiaria');
+        const aCombinar = document.getElementById('valorNegociavelCadastro').checked;
+        if (!aCombinar && (!valor.value || !valor.checkValidity() || Number(valor.value) < 0)) {
+            mostrarErroCadastro('Informe um valor de diária válido ou selecione "A combinar".', 'valorDiaria'); return false;
         }
         if (fotosCadastroPrestador.length > 5) {
             mostrarErroCadastro('Selecione no máximo 5 fotos.', 'fotosPrestador'); return false;
@@ -633,10 +648,9 @@ async function cadastrarUsuario() {
                     document.getElementById("estado").value.trim()
                 );
 
-                dadosProfissional.append(
-                    "valor_diaria",
-                    document.getElementById("valorDiaria").value
-                );
+                const valorNegociavel = document.getElementById('valorNegociavelCadastro').checked;
+                dadosProfissional.append('valor_negociavel', valorNegociavel ? '1' : '0');
+                dadosProfissional.append('valor_diaria', valorNegociavel ? '' : document.getElementById('valorDiaria').value);
 
                 dadosProfissional.append(
                     "descricao",
@@ -778,6 +792,7 @@ function abrirEdicaoEquipamento(id) {
             <h2>Editar equipamento</h2>
             <label>Nome<input name="nome_equipamento" required maxlength="150" value="${escaparTextoPainel(equipamento.nome_equipamento)}"></label>
             <label>Tipo<input name="tipo_equipamento" required maxlength="100" value="${escaparTextoPainel(equipamento.tipo_equipamento)}"></label>
+            <div class="campos-editar-linha"><label>Cidade<input name="cidade" maxlength="100" value="${escaparTextoPainel(equipamento.cidade_anuncio || equipamento.cidade || '')}"></label><label>Estado<input name="estado" maxlength="50" value="${escaparTextoPainel(equipamento.estado_anuncio || equipamento.estado || '')}"></label></div>
             <label>Descrição<textarea name="descricao" rows="4">${escaparTextoPainel(equipamento.descricao || "")}</textarea></label>
             <div class="campos-editar-linha">
                 <label>Valor da diária<input name="valor_diaria" type="number" min="0" step="0.01" required value="${escaparTextoPainel(equipamento.valor_diaria)}"></label>
@@ -812,7 +827,7 @@ async function salvarEdicaoEquipamento(event, id) {
     if (!usuario) return;
     const form = event.currentTarget;
     const dados = new FormData();
-    ["nome_equipamento", "tipo_equipamento", "descricao", "valor_diaria", "quantidade"].forEach(nome => {
+    ["nome_equipamento", "tipo_equipamento", "descricao", "valor_diaria", "quantidade", "cidade", "estado"].forEach(nome => {
         dados.append(nome, form.elements.namedItem(nome).value);
     });
     const fotosManter = [...form.querySelectorAll('input[name="fotosManter"]:checked')].map(campo => campo.value);
@@ -855,7 +870,7 @@ async function alternarDisponibilidadeEquipamento(id) {
 }
 
 async function excluirEquipamento(id) {
-    if (!confirm("Tem certeza de que deseja excluir este anúncio? Esta ação não pode ser desfeita.")) return;
+    if (!confirm("Desativar este anuncio? Ele saira das buscas publicas, mas solicitacoes, avaliacoes e fotos serao preservadas. Voce podera reativa-lo depois.")) return;
     const usuario = usuarioComSessao();
     if (!usuario) return;
     try {
@@ -1542,6 +1557,7 @@ document.addEventListener("keydown", function(event) {
 // =========================
 
 let equipamentosDoPainel = [];
+let servicosDoPainel = [];
 
 async function carregarMeusAnuncios() {
 
@@ -1567,7 +1583,9 @@ async function carregarMeusAnuncios() {
 
         const prestador = resultado.prestador;
         const equipamentos = resultado.equipamentos || [];
+        const servicos = resultado.servicos || [];
         equipamentosDoPainel = equipamentos;
+        servicosDoPainel = servicos;
 
         let html = `
             <h2 class="titulo-secao-painel">Meus anúncios</h2>
@@ -1596,11 +1614,7 @@ async function carregarMeusAnuncios() {
                         📍 ${escaparTextoPainel(prestador.cidade)},
                         ${escaparTextoPainel(prestador.estado)}
                     </p>
-
-                    <p>
-                        💰 R$ ${escaparTextoPainel(prestador.valor_diaria)} por diária
-                    </p>
-
+                    <p>${prestador.valor_negociavel ? 'Valor a combinar' : `R$ ${escaparTextoPainel(prestador.valor_diaria)} por dia`}</p>
                     <div class="fotos-anuncio-painel">
                         ${(prestador.fotos || []).map(foto => `
                             <img
@@ -1614,11 +1628,31 @@ async function carregarMeusAnuncios() {
             `;
         }
 
+        if (prestador) {
+        html += `<section class="anuncios-servicos-painel"><div class="anuncios-servicos-cabecalho"><h3 class="subtitulo-anuncios-painel">Meus serviços (${servicos.length})</h3><button type="button" class="acao-anuncio-principal" onclick="abrirFormularioServico()">Adicionar serviço</button></div>`;
+        html += servicos.length ? servicos.map(servico => `
+            <div class="anuncio-painel-card">
+                <h3>${escaparTextoPainel(servico.nome_servico)}</h3>
+                <p>${escaparTextoPainel(servico.descricao || 'Sem descrição.')}</p>
+                <p>${escaparTextoPainel([servico.cidade, servico.estado].filter(Boolean).join(', '))}</p>
+                <p>${servico.valor_negociavel ? 'Valor a combinar' : `R$ ${escaparTextoPainel(servico.valor_diaria)} por diária`}</p>
+                <p>Especialidades: ${escaparTextoPainel((servico.especialidades || []).join(', ') || servico.nome_servico)}</p>
+                <p>Disponibilidade: ${Number(servico.disponivel) === 1 ? 'Disponível' : 'Indisponível'}</p>
+                <div class="acoes-anuncio-painel">
+                    <button type="button" class="acao-anuncio-principal" onclick="abrirFormularioServico(${Number(servico.id_servico)})">Editar</button>
+                    <button type="button" class="acao-anuncio-secundaria" onclick="alternarDisponibilidadeServico(${Number(servico.id_servico)})">${Number(servico.disponivel) === 1 ? 'Marcar indisponível' : 'Marcar disponível'}</button>
+                    <button type="button" class="acao-anuncio-excluir" onclick="excluirServico(${Number(servico.id_servico)})">Excluir</button>
+                </div>
+                <div class="fotos-anuncio-painel">${(servico.fotos || []).map(foto => `<img src="${escaparTextoPainel(resolverUrlImagem(foto))}" alt="Foto do serviço">`).join('')}</div>
+            </div>`).join('') : '<div class="mensagem-painel-vazio"><p>Nenhum serviço cadastrado. Você pode publicar vários serviços no seu perfil.</p></div>';
+        html += '</section><div id="formularioServicoPainel"></div>';
+        }
+
         // EQUIPAMENTOS
 
         html += `
             <h3 class="subtitulo-anuncios-painel">
-                Meus equipamentos (${equipamentos.length})
+                Minhas Máquinas (${equipamentos.length})
             </h3>
         `;
 
@@ -1645,6 +1679,8 @@ async function carregarMeusAnuncios() {
                             Tipo: ${escaparTextoPainel(equipamento.tipo_equipamento)}
                         </p>
 
+                        <p>📍 ${escaparTextoPainel([equipamento.cidade_anuncio || equipamento.cidade, equipamento.estado_anuncio || equipamento.estado].filter(Boolean).join(', '))}</p>
+
                         <p>
                             ${escaparTextoPainel(equipamento.descricao)}
                         </p>
@@ -1664,7 +1700,7 @@ async function carregarMeusAnuncios() {
 
                         <div class="acoes-anuncio-painel">
                             <button type="button" class="acao-anuncio-principal" onclick="abrirEdicaoEquipamento(${Number(equipamento.id_equipamento)})">Editar</button>
-                            <button type="button" class="acao-anuncio-secundaria" onclick="alternarDisponibilidadeEquipamento(${Number(equipamento.id_equipamento)})">${Number(equipamento.disponivel) === 1 ? "Marcar indisponível" : "Marcar disponível"}</button>
+                            <button type="button" class="acao-anuncio-secundaria" onclick="alternarDisponibilidadeEquipamento(${Number(equipamento.id_equipamento)})">${Number(equipamento.disponivel) === 1 ? "Marcar indisponível" : "Reativar anúncio"}</button>
                             <button type="button" class="acao-anuncio-excluir" onclick="excluirEquipamento(${Number(equipamento.id_equipamento)})">Excluir</button>
                         </div>
 
@@ -1704,10 +1740,91 @@ async function carregarMeusAnuncios() {
 
 }
 
+function abrirFormularioServico(idServico = null) {
+    const servico = idServico ? servicosDoPainel.find(item => Number(item.id_servico) === Number(idServico)) : null;
+    const destino = document.getElementById('formularioServicoPainel');
+    if (!destino) return;
+    const fotos = servico?.fotos || [];
+    const especialidades = (servico?.especialidades || []).join(', ');
+    destino.innerHTML = `<form id="formServicoPainel" class="anuncio-painel-card formulario-servico-painel" onsubmit="salvarServicoPainel(event, ${servico ? Number(servico.id_servico) : 'null'})">
+        <h3>${servico ? 'Editar serviço' : 'Novo serviço'}</h3>
+        <label>Serviço ou profissão<input name="nome_servico" maxlength="100" required value="${escaparTextoPainel(servico?.nome_servico || '')}"></label>
+        <label>Descrição<textarea name="descricao" maxlength="4000" rows="3">${escaparTextoPainel(servico?.descricao || '')}</textarea></label>
+        <div class="form-solicitacao-linha"><label>Cidade<input name="cidade" maxlength="100" required value="${escaparTextoPainel(servico?.cidade || '')}"></label><label>Estado<input name="estado" maxlength="50" required value="${escaparTextoPainel(servico?.estado || '')}"></label></div>
+        <label class="servico-valor-negociavel"><input name="valor_negociavel" type="checkbox" ${servico?.valor_negociavel ? 'checked' : ''} onchange="this.form.elements.valor_diaria.disabled=this.checked"> Valor a combinar</label>
+        <label>Valor da diária<input name="valor_diaria" type="number" min="0" step="0.01" ${servico?.valor_negociavel ? 'disabled' : ''} ${servico?.valor_negociavel ? '' : 'required'} value="${servico?.valor_diaria == null ? '' : escaparTextoPainel(servico.valor_diaria)}"></label>
+        <label>Especialidades (separadas por vírgula)<input name="especialidades" maxlength="1000" value="${escaparTextoPainel(especialidades)}" placeholder="Ex.: reformas, acabamento"></label>
+        ${fotos.length ? `<div class="fotos-anuncio-painel fotos-servico-existentes">${fotos.map((foto, indice) => `<label><img src="${escaparTextoPainel(resolverUrlImagem(foto))}" alt="Foto atual ${indice + 1}"><input type="checkbox" name="fotoManter" value="${escaparTextoPainel(foto)}" checked> Manter foto ${indice + 1}</label>`).join('')}</div>` : ''}
+        <label>Fotos do serviço<input name="fotos" type="file" accept="image/jpeg,image/png,image/webp" multiple><small>Até 5 fotos no total, máximo de 5 MB cada.</small></label>
+        <div class="acoes-anuncio-painel"><button class="acao-anuncio-principal" type="submit">${servico ? 'Salvar alterações' : 'Publicar serviço'}</button><button class="acao-anuncio-secundaria" type="button" onclick="document.getElementById('formularioServicoPainel').innerHTML=''">Cancelar</button></div>
+    </form>`;
+    destino.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function salvarServicoPainel(event, idServico) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const usuario = obterUsuarioPainel();
+    const dados = new FormData(form);
+    const arquivos = Array.from(form.elements.fotos.files || []);
+    const fotosManter = Array.from(form.querySelectorAll('input[name="fotoManter"]:checked')).map(input => input.value);
+    if (fotosManter.length + arquivos.length > 5) return alert('O serviço pode ter no máximo cinco fotos.');
+    dados.delete('fotoManter');
+    dados.delete('fotos');
+    dados.set('valor_negociavel', form.elements.valor_negociavel.checked ? '1' : '0');
+    dados.set('especialidades', JSON.stringify(String(form.elements.especialidades.value || '').split(',').map(item => item.trim()).filter(Boolean)));
+    if (idServico) dados.set('fotosManter', JSON.stringify(fotosManter));
+    arquivos.forEach(arquivo => dados.append('fotos', arquivo));
+    const botao = form.querySelector('button[type="submit"]');
+    botao.disabled = true;
+    try {
+        const resposta = await fetch(`${API_BASE_URL}/servicos${idServico ? `/${Number(idServico)}` : ''}`, {
+            method: idServico ? 'PUT' : 'POST',
+            headers: { Authorization: `Bearer ${usuario?.auth_token || ''}` },
+            body: dados
+        });
+        const resultado = await resposta.json();
+        if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || 'Não foi possível salvar o serviço.');
+        await carregarMeusAnuncios();
+    } catch (erro) {
+        alert(erro.message);
+        botao.disabled = false;
+    }
+}
+
+async function alternarDisponibilidadeServico(idServico) {
+    const servico = servicosDoPainel.find(item => Number(item.id_servico) === Number(idServico));
+    const usuario = obterUsuarioPainel();
+    if (!servico || !usuario?.auth_token) return;
+    try {
+        const resposta = await fetch(`${API_BASE_URL}/servicos/${Number(idServico)}/disponibilidade`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${usuario.auth_token}` },
+            body: JSON.stringify({ disponivel: Number(servico.disponivel) === 1 ? 0 : 1 })
+        });
+        const resultado = await resposta.json();
+        if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || 'Falha ao alterar disponibilidade.');
+        await carregarMeusAnuncios();
+    } catch (erro) { alert(erro.message); }
+}
+
+async function excluirServico(idServico) {
+    if (!confirm('Excluir este serviço? Ele deixará de aparecer na busca, mas o histórico de pedidos e avaliações será preservado.')) return;
+    const usuario = obterUsuarioPainel();
+    try {
+        const resposta = await fetch(`${API_BASE_URL}/servicos/${Number(idServico)}`, {
+            method: 'DELETE', headers: { Authorization: `Bearer ${usuario?.auth_token || ''}` }
+        });
+        const resultado = await resposta.json();
+        if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || 'Falha ao excluir serviço.');
+        await carregarMeusAnuncios();
+    } catch (erro) { alert(erro.message); }
+}
+
 verificarLogin();
 inicializarCamposCadastro();
 
 let todosPrestadores = [];
+let prestadorPerfilAtual = null;
 let requisicaoBuscaPrestadores = 0;
 
 function escaparHTML(valor) {
@@ -1729,19 +1846,21 @@ function renderizarPrestadores(prestadores) {
         const nome = escaparHTML(prestador.nome || "Profissional");
         const profissao = escaparHTML(prestador.profissao || "Profissional da construção");
         const iniciais = String(prestador.nome || "P").split(" ").map(parte => parte[0]).slice(0, 2).join("");
-        const fotos = prestador.fotos || [];
+        const fotos = prestador.fotos_card || prestador.fotos || [];
         const id = Number(prestador.id_prestador);
+        const idServico = Number(prestador.id_servico);
+        const idCard = idServico || id;
         const especialidades = prestador.especialidades || (prestador.especialidade ? [prestador.especialidade] : []);
         const nota = Number(prestador.avaliacao);
         const totalAvaliacoes = Number(prestador.total_avaliacoes) || 0;
         const verificado = [1, true, "1", "true"].includes(prestador.verificado);
         const galeriaFotos = fotos.length ? `
-            <div class="prof-gallery" id="carrossel-prestador-${id}" data-indice="0">
+            <div class="prof-gallery" id="carrossel-prestador-${idCard}" data-indice="0">
                 <img class="prof-photo" src="${escaparHTML(resolverUrlImagem(fotos[0]))}" alt="Trabalho de ${nome}" data-indice="0">
                 ${fotos.length > 1 ? `
-                    <button class="prof-photo-arrow prof-photo-prev" onclick="mudarFotoPrestador(${id}, -1)" type="button" aria-label="Foto anterior">❮</button>
-                    <button class="prof-photo-arrow prof-photo-next" onclick="mudarFotoPrestador(${id}, 1)" type="button" aria-label="Próxima foto">❯</button>
-                    <span class="prof-photo-counter" id="contador-prestador-${id}">1/${fotos.length}</span>` : ""}
+                    <button class="prof-photo-arrow prof-photo-prev" onclick="mudarFotoPrestador(${idCard}, -1)" type="button" aria-label="Foto anterior">❮</button>
+                    <button class="prof-photo-arrow prof-photo-next" onclick="mudarFotoPrestador(${idCard}, 1)" type="button" aria-label="Próxima foto">❯</button>
+                    <span class="prof-photo-counter" id="contador-prestador-${idCard}">1/${fotos.length}</span>` : ""}
             </div>` : `<div class="prof-avatar">${escaparHTML(iniciais)}</div>`;
         const avaliacao = totalAvaliacoes > 0 && Number.isFinite(nota)
             ? `⭐ ${nota.toFixed(1)} <span>(${totalAvaliacoes} avaliações)</span>`
@@ -1750,23 +1869,27 @@ function renderizarPrestadores(prestadores) {
             ? especialidades.map(item => `<span class="prof-tag">${escaparHTML(item)}</span>`).join("")
             : `<span class="prof-tag">${profissao}</span>`;
 
+        const precoHtml = prestador.valor_negociavel
+            ? '<span class="prof-price">Valor a combinar</span>'
+            : `<span class="prof-price">${prestador.valor_diaria == null ? 'Consulte' : `R$ ${escaparHTML(Number(prestador.valor_diaria).toLocaleString('pt-BR', { minimumFractionDigits: 2 }))}`}<small>${prestador.valor_diaria == null ? '' : '/ dia'}</small></span>`;
         return `<article class="prof-card">
             <div class="prof-verified ${verificado ? "" : "prof-cadastrado"}">${verificado ? "✓ Verificado" : "Perfil cadastrado"}</div>
             <div class="prof-header">${galeriaFotos}<div class="prof-meta"><div class="prof-name">${nome}</div><div class="prof-role">${profissao}</div></div></div>
             <div class="prof-stars">${avaliacao}</div>
             <div class="prof-tags">${tags}</div>
-            <div class="prof-info"><div class="prof-location">📍 ${escaparHTML(prestador.cidade)} - ${escaparHTML(prestador.estado)}</div><div class="prof-price">R$ ${escaparHTML(prestador.valor_diaria)}<small>/ dia</small></div></div>
-            <button class="btn-prof-contact" type="button" onclick="abrirPerfilPrestador(${id})">Ver perfil</button>
+            <div class="prof-info"><div class="prof-location">📍 ${escaparHTML(prestador.cidade)} - ${escaparHTML(prestador.estado)}</div>${precoHtml}</div>
+            <button class="btn-prof-contact" type="button" onclick="abrirPerfilPrestador(${id}, ${idServico || 'null'})">Ver perfil</button>
         </article>`;
     }).join("");
 }
 function mudarFotoPrestador(idPrestador, direcao) {
 
     const prestador = todosPrestadores.find(
-        item => String(item.id_prestador) === String(idPrestador)
+        item => String(item.id_servico || item.id_prestador) === String(idPrestador)
     );
 
-    if (!prestador || !prestador.fotos || prestador.fotos.length < 2) {
+    const fotos = prestador?.fotos_card || prestador?.fotos || [];
+    if (!prestador || fotos.length < 2) {
         return;
     }
 
@@ -1779,14 +1902,14 @@ function mudarFotoPrestador(idPrestador, direcao) {
     let indice = Number(galeria.dataset.indice || 0);
 
     indice = (
-        indice + direcao + prestador.fotos.length
-    ) % prestador.fotos.length;
+        indice + direcao + fotos.length
+    ) % fotos.length;
 
     galeria.dataset.indice = indice;
 
     const imagem = galeria.querySelector(".prof-photo");
 
-    imagem.src = `${resolverUrlImagem(prestador.fotos[indice])}`;
+    imagem.src = `${resolverUrlImagem(fotos[indice])}`;
     imagem.dataset.indice = indice;
 
     const contador = document.getElementById(
@@ -1794,7 +1917,7 @@ function mudarFotoPrestador(idPrestador, direcao) {
     );
 
     if (contador) {
-        contador.textContent = `${indice + 1}/${prestador.fotos.length}`;
+        contador.textContent = `${indice + 1}/${fotos.length}`;
     }
 }
 
@@ -1822,23 +1945,14 @@ async function buscarPrestadores(event) {
 
     try {
         await prepararUrlsImagens();
-        const resposta = await fetch(`${API_BASE_URL}/prestadores?${parametros.toString()}`);
+        const resposta = await fetch(`${API_BASE_URL}/servicos/anuncios?${parametros.toString()}`);
         if (!resposta.ok) throw new Error("Falha ao consultar profissionais.");
         const resultados = await resposta.json();
         if (numeroRequisicao !== requisicaoBuscaPrestadores) return;
-        const servicoNormalizado = normalizarTermoBusca(servico);
-        const partesLocalizacao = cidade.split(",").map(parte => normalizarTermoBusca(parte)).filter(Boolean);
-        todosPrestadores = resultados.filter(prestador => {
-            const termosServico = [prestador.profissao, prestador.especialidade, ...(prestador.especialidades || [])]
-                .map(normalizarTermoBusca);
-            const servicoCombina = !servicoNormalizado || termosServico.some(termo => termo.includes(servicoNormalizado));
-            const cidadeNormalizada = normalizarTermoBusca(prestador.cidade);
-            const estadoNormalizado = normalizarTermoBusca(prestador.estado);
-            const cidadeCombina = !partesLocalizacao.length || (partesLocalizacao.length > 1
-                ? cidadeNormalizada.includes(partesLocalizacao[0]) && estadoNormalizado.includes(partesLocalizacao.slice(1).join(" "))
-                : cidadeNormalizada.includes(partesLocalizacao[0]) || estadoNormalizado.includes(partesLocalizacao[0]));
-            return servicoCombina && cidadeCombina;
-        });
+        todosPrestadores = resultados.map(item => ({
+            ...item,
+            fotos_card: item.fotos?.length ? item.fotos : (item.fotos_trabalhos || [])
+        }));
         renderizarPrestadores(todosPrestadores);
     } catch (erro) {
         if (numeroRequisicao !== requisicaoBuscaPrestadores) return;
@@ -1855,9 +1969,12 @@ function limparBuscaPrestadores() {
     buscarPrestadores();
 }
 
-function abrirPerfilPrestador(id) {
-    const prestador = todosPrestadores.find(item => Number(item.id_prestador) === Number(id));
+function abrirPerfilPrestador(id, idServico = null) {
+    const prestador = todosPrestadores.find(item => idServico
+        ? Number(item.id_prestador) === Number(id) && Number(item.id_servico) === Number(idServico)
+        : Number(item.id_prestador) === Number(id));
     if (!prestador) return;
+    prestadorPerfilAtual = prestador;
     const modal = document.getElementById("modalPerfilPrestador");
     const fotos = prestador.fotos || [];
     const nome = escaparHTML(prestador.nome || "Profissional");
@@ -1868,26 +1985,29 @@ function abrirPerfilPrestador(id) {
     const temAvaliacao = totalAvaliacoes > 0 && Number.isFinite(nota);
     const verificado = [1, true, "1", "true"].includes(prestador.verificado);
     const usuarioAtivo = obterUsuarioPainel();
+    const idServicoPerfil = Number(prestador.id_servico) || null;
     const podeIniciarConversa = !usuarioAtivo || !usuarioAtivo.tipo_usuario || String(usuarioAtivo.tipo_usuario).toUpperCase() === "CLIENTE";
     const contato = podeIniciarConversa
         ? `<button class="perfil-botao-contato" type="button" onclick="iniciarConversa(${Number(id)})">💬 Entrar em contato</button>`
         : '<button class="perfil-botao-contato" type="button" disabled>Contato disponível para contratantes</button>';
     const solicitar = podeIniciarConversa
-        ? `<button class="perfil-botao-contato perfil-botao-solicitar" type="button" onclick="solicitarOrcamento(${Number(id)})">📋 Solicitar orçamento</button>`
+        ? `<button class="perfil-botao-contato perfil-botao-solicitar" type="button" onclick="solicitarOrcamento(${Number(id)}, ${idServicoPerfil || 'null'})">📋 Solicitar orçamento</button>`
         : '';
-    const fotoPerfil = prestador.foto_perfil || prestador.foto || fotos[0];
+    const fotoPerfil = prestador.foto_perfil || prestador.foto;
     const avatar = fotoPerfil
         ? `<img class="perfil-foto-principal" id="perfilFotoPrincipal" src="${escaparHTML(resolverUrlImagem(fotoPerfil))}" alt="Foto de perfil de ${nome}">`
         : `<div class="perfil-avatar-grande">${escaparHTML(String(prestador.nome || "P").split(" ").map(parte => parte[0]).slice(0, 2).join(""))}</div>`;
-    const galeria = fotos.length ? `<section class="perfil-galeria-secao"><h3>📷 Meus trabalhos</h3><div class="perfil-galeria">${fotos.map((foto, indice) => `<button type="button" onclick="selecionarFotoPerfilPrestador(${Number(id)}, ${indice})" aria-label="Ver foto ${indice + 1}"><img src="${escaparHTML(resolverUrlImagem(foto))}" alt="Trabalho ${indice + 1} de ${nome}"></button>`).join("")}</div></section>` : "";
+    const fotosTrabalho = prestador.fotos_trabalhos || [];
+    const galeria = fotosTrabalho.length ? `<section class="perfil-galeria-secao"><h3>📷 Meus trabalhos</h3><div class="perfil-galeria">${fotosTrabalho.map((foto, indice) => `<button type="button" onclick="abrirGaleriaPrestador(${Number(id)}, ${indice}, 'trabalhos')" aria-label="Ampliar trabalho ${indice + 1}"><img src="${escaparHTML(resolverUrlImagem(foto))}" alt="Trabalho ${indice + 1} de ${nome}"></button>`).join("")}</div></section>` : "";
+    const galeriaServico = fotos.length ? `<section class="perfil-galeria-secao"><h3>📷 Fotos deste serviço</h3><div class="perfil-galeria">${fotos.map((foto, indice) => `<button type="button" onclick="abrirGaleriaPrestador(${Number(id)}, ${indice}, 'servico')" aria-label="Ampliar foto do serviço ${indice + 1}"><img src="${escaparHTML(resolverUrlImagem(foto))}" alt="Foto ${indice + 1} do serviço"></button>`).join("")}</div></section>` : "";
     const notaHtml = temAvaliacao
         ? `<strong>⭐ ${nota.toFixed(1)}</strong> de 5 (${totalAvaliacoes} avaliações)`
         : '<span>Este profissional ainda não recebeu avaliações.</span>';
     const tags = especialidades.length
         ? especialidades.map(item => `<span>${escaparHTML(item)}</span>`).join("")
         : `<span>${profissao}</span>`;
-    const preco = Number(prestador.valor_diaria);
-    const diaria = Number.isFinite(preco)
+    const preco = prestador.valor_diaria == null ? NaN : Number(prestador.valor_diaria);
+    const diaria = prestador.valor_negociavel ? 'Valor a combinar' : Number.isFinite(preco)
         ? preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
         : escaparHTML(prestador.valor_diaria || "Consulte o profissional");
 
@@ -1906,6 +2026,7 @@ function abrirPerfilPrestador(id) {
                 <div class="perfil-preco"><strong>${diaria}</strong><span>por diária</span></div>
             </div>
             ${galeria}
+            ${galeriaServico}
             <div class="perfil-detalhes">
                 <section class="perfil-sobre"><h3>📝 Sobre mim</h3><p>${escaparHTML(prestador.descricao || "O profissional ainda não adicionou uma descrição.")}</p><h3>⚙ Serviços oferecidos</h3><div class="perfil-tags">${tags}</div><h3>📍 Localização</h3><p>${escaparHTML(prestador.cidade)}${prestador.estado ? `, ${escaparHTML(prestador.estado)}` : ""}</p></section>
                 <aside class="perfil-contato"><h3>⭐ Avaliações</h3><p id="resumoAvaliacoesPrestador-${Number(id)}">${notaHtml}</p><div id="avaliacoesPrestador-${Number(id)}" class="lista-avaliacoes"><span>Carregando comentários...</span></div>${solicitar}${contato}</aside>
@@ -1969,6 +2090,20 @@ function selecionarFotoPerfilPrestador(id, indice) {
     }
 }
 
+function abrirGaleriaPrestador(idPrestador, indice, categoria) {
+    const cadastro = prestadorPerfilAtual && Number(prestadorPerfilAtual.id_prestador) === Number(idPrestador)
+        ? prestadorPerfilAtual
+        : todosPrestadores.find(item => Number(item.id_prestador) === Number(idPrestador));
+    if (!cadastro) return;
+    const fotos = categoria === 'trabalhos' ? cadastro.fotos_trabalhos : cadastro.fotos;
+    if (!fotos?.length) return;
+    prestadorAmpliado = { fotos };
+    equipamentoAmpliado = null;
+    indiceFotoAmpliada = Number(indice) || 0;
+    modalFoto.classList.add('ativo');
+    atualizarFotoAmpliada();
+}
+
 function fecharPerfilPrestador(event) {
     if (event && event.target !== event.currentTarget) return;
     const modal = document.getElementById("modalPerfilPrestador");
@@ -1977,10 +2112,10 @@ function fecharPerfilPrestador(event) {
     document.body.classList.remove("perfil-aberto");
 }
 
-function solicitarOrcamento(idPrestador) {
+function solicitarOrcamento(idPrestador, idServico = null) {
     const usuario = obterUsuarioPainel();
     if (!usuario?.auth_token) {
-        solicitacaoPendenteLogin = { tipo: 'SERVICO', id_prestador: Number(idPrestador) };
+        solicitacaoPendenteLogin = { tipo: 'SERVICO', id_prestador: Number(idPrestador), id_servico: Number(idServico) || null };
         fecharPerfilPrestador();
         alert('Entre na sua conta de contratante para solicitar um orçamento.');
         openModal('login');
@@ -1990,7 +2125,7 @@ function solicitarOrcamento(idPrestador) {
         alert('Somente contratantes podem enviar solicitações.');
         return;
     }
-    const prestador = todosPrestadores.find(item => Number(item.id_prestador) === Number(idPrestador));
+    const prestador = todosPrestadores.find(item => Number(item.id_prestador) === Number(idPrestador) && (!idServico || Number(item.id_servico) === Number(idServico)));
     if (!prestador) return;
     abrirModalSolicitacaoServico(prestador);
 }
@@ -2026,7 +2161,7 @@ function retomarSolicitacaoPendente() {
         alert('A solicitação está disponível somente para contratantes.');
         return;
     }
-    if (pendente.tipo === 'SERVICO') solicitarOrcamento(pendente.id_prestador);
+    if (pendente.tipo === 'SERVICO') solicitarOrcamento(pendente.id_prestador, pendente.id_servico);
     else abrirSolicitacaoEquipamento(pendente.id_equipamento);
 }
 
@@ -2040,7 +2175,7 @@ function dataAtualParaFormulario() {
 
 function abrirModalSolicitacaoServico(prestador) {
     fecharPerfilPrestador();
-    solicitacaoAtual = { tipo: 'SERVICO', id_prestador: Number(prestador.id_prestador) };
+    solicitacaoAtual = { tipo: 'SERVICO', id_prestador: Number(prestador.id_prestador), id_servico: Number(prestador.id_servico) || null };
     const nome = escaparHTML(prestador.nome || 'profissional');
     const servico = escaparHTML(prestador.profissao || 'Serviço profissional');
     const local = escaparHTML([prestador.cidade, prestador.estado].filter(Boolean).join(', '));
@@ -2435,6 +2570,8 @@ async function cadastrarEquipamento() {
 
     const quantidade =
         document.getElementById("quantidadeEquipamento").value;
+    const cidade = document.getElementById("cidadeEquipamento").value.trim();
+    const estado = document.getElementById("estadoEquipamento").value.trim();
 
 
     if (
@@ -2460,6 +2597,8 @@ async function cadastrarEquipamento() {
     dados.append("descricao", descricao);
     dados.append("valor_diaria", valor_diaria);
     dados.append("quantidade", quantidade);
+    dados.append("cidade", cidade);
+    dados.append("estado", estado);
 
 
     // ===============================
@@ -2705,6 +2844,7 @@ function fecharFotoAmpliada() {
     modalFoto.classList.remove("ativo");
     imagemAmpliada.src = "";
     equipamentoAmpliado = null;
+    prestadorAmpliado = null;
     indiceFotoAmpliada = 0;
 }
 
@@ -2747,9 +2887,8 @@ document.addEventListener("click", function(evento) {
             "carrossel-prestador-", ""
         );
 
-        prestadorAmpliado = todosPrestadores.find(
-            item => String(item.id_prestador) === idPrestador
-        );
+        const prestadorCard = todosPrestadores.find(item => String(item.id_servico || item.id_prestador) === idPrestador);
+        prestadorAmpliado = prestadorCard ? { fotos: prestadorCard.fotos_card || [] } : null;
 
         equipamentoAmpliado = null;
 

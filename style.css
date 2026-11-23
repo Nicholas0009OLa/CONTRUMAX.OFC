@@ -138,6 +138,9 @@
     outline: none; border-radius: 0; transition: border-color .2s;
   }
   .mform-group input:focus, .mform-group select:focus { border-color: var(--yellow); }
+  .mform-group label.servico-valor-negociavel { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; color: var(--white); font-size: 13px; text-transform: none; letter-spacing: 0; }
+  .mform-group label.servico-valor-negociavel input[type="checkbox"] { width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--yellow); }
+  .mform-group input:disabled { opacity: .55; cursor: not-allowed; }
   .mform-group select option { background: var(--dark2); }
   .mform-group textarea {
     width: 100%; min-height: 140px; resize: vertical;

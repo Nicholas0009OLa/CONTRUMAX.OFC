@@ -140,8 +140,9 @@ async function removerFotoPrestadorSeSemReferencias(url, categoria, idRegistro) 
             (SELECT COUNT(*) FROM usuarios WHERE foto_perfil = ?) +
             (SELECT COUNT(*) FROM prestadores WHERE foto = ?) +
             (SELECT COUNT(*) FROM fotos_prestadores WHERE url_foto = ?) +
-            (SELECT COUNT(*) FROM fotos_equipamentos WHERE url_foto = ?) AS total`,
-        [referencia, referencia, referencia, referencia]
+            (SELECT COUNT(*) FROM fotos_equipamentos WHERE url_foto = ?) +
+            (SELECT COUNT(*) FROM fotos_servicos WHERE url_foto = ?) AS total`,
+        [referencia, referencia, referencia, referencia, referencia]
     );
     if (Number(referencias[0]?.total) !== 0) return;
     if (ehObjetoSupabase) await armazenamentoImagens.remover(referencia, categoria, idRegistro);
@@ -184,6 +185,27 @@ async function removerImagensLegadasOuSupabase(referencias, categoria, idRegistr
             await removerFotoPrestadorSeSemReferencias(referencia, categoria, idRegistro);
         }
     }
+}
+
+function normalizarListaEspecialidades(valor) {
+    let lista = valor;
+    if (typeof lista === 'string') {
+        try { lista = JSON.parse(lista); }
+        catch { lista = lista.split(','); }
+    }
+    if (!Array.isArray(lista)) return [];
+    const vistas = new Set();
+    return lista.map(item => String(item || '').trim().slice(0, 100))
+        .filter(item => {
+            const chave = item.toLocaleLowerCase('pt-BR');
+            if (!item || vistas.has(chave)) return false;
+            vistas.add(chave);
+            return true;
+        }).slice(0, 10);
+}
+
+function dividirListaAgregada(valor) {
+    return valor ? String(valor).split('|||').filter(Boolean) : [];
 }
 
 function uploadCamposPerfil(req, res, next) {
@@ -435,6 +457,9 @@ app.post('/cadastro-prestador', autenticar, uploadFotosCadastroPrestador, async 
     }
     if (!req.body) return res.status(400).json({ sucesso: false, mensagem: 'Dados do profissional nao recebidos.' });
     const { cpf_cnpj, profissao, cidade, estado, valor_diaria, descricao } = req.body;
+    const valorNegociavel = ['1', 'true', 'on'].includes(String(req.body.valor_negociavel || '').toLowerCase()) ||
+        (req.body.valor_negociavel == null && String(valor_diaria ?? '').trim() === '');
+    const valorDiariaSalvo = valorNegociavel || String(valor_diaria ?? '').trim() === '' ? null : Number(valor_diaria);
     if (!validarDocumentoCpfCnpj(cpf_cnpj)) {
         removerUploadsRecebidos(req);
         return res.status(400).json({ sucesso: false, mensagem: 'Informe um CPF ou CNPJ completo e valido.' });
@@ -443,10 +468,15 @@ app.post('/cadastro-prestador', autenticar, uploadFotosCadastroPrestador, async 
         removerUploadsRecebidos(req);
         return res.status(400).json({ sucesso: false, mensagem: 'Informe profiss?o, cidade e estado.' });
     }
+    if (!valorNegociavel && (!Number.isFinite(valorDiariaSalvo) || valorDiariaSalvo < 0 || valorDiariaSalvo > 99999999.99)) {
+        removerUploadsRecebidos(req);
+        return res.status(400).json({ sucesso: false, mensagem: 'Informe um valor de diária válido ou marque "A combinar".' });
+    }
 
     let conexao;
     let transacaoAtiva = false;
     let caminhosEnviados = [];
+    let idPrestador = null;
     try {
         const existentes = await consultar('SELECT id_prestador FROM prestadores WHERE id_usuario = ?', [idUsuario]);
         if (existentes.length) {
@@ -454,7 +484,7 @@ app.post('/cadastro-prestador', autenticar, uploadFotosCadastroPrestador, async 
             return res.json({ sucesso: true, mensagem: 'Este profissional ja esta cadastrado.', id_prestador: existentes[0].id_prestador, ja_existia: true });
         }
         const sequencia = await consultar('INSERT INTO prestadores_id_seq () VALUES ()');
-        const idPrestador = Number(sequencia.insertId);
+        idPrestador = Number(sequencia.insertId);
         caminhosEnviados = await guardarImagensNoSupabase(req.files || [], 'trabalhosPrestador', idPrestador);
 
         conexao = await db.promise().getConnection();
@@ -462,7 +492,7 @@ app.post('/cadastro-prestador', autenticar, uploadFotosCadastroPrestador, async 
         transacaoAtiva = true;
         await consultarNaConexao(conexao,
             'INSERT INTO prestadores (id_prestador, id_usuario, cpf_cnpj, profissao, cidade, estado, valor_diaria, descricao) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [idPrestador, idUsuario, String(cpf_cnpj).replace(/\D/g, ''), profissao, cidade, estado, valor_diaria, descricao]);
+            [idPrestador, idUsuario, String(cpf_cnpj).replace(/\D/g, ''), profissao, cidade, estado, valorDiariaSalvo, descricao]);
         let fotosSalvas = 0;
         for (const caminho of caminhosEnviados) {
             const sequenciaFoto = await consultarNaConexao(conexao, 'INSERT INTO fotos_prestadores_id_seq () VALUES ()');
@@ -654,6 +684,7 @@ app.get('/prestadores', (req, res) => {
 
             const prestadores = resultado.map(prestador => ({
                 ...prestador,
+                valor_negociavel: prestador.valor_diaria === null || prestador.valor_diaria === undefined,
                 avaliacao: prestador.nota_media_avaliacoes !== null && prestador.nota_media_avaliacoes !== undefined
                     ? Number(prestador.nota_media_avaliacoes) : prestador.avaliacao,
                 total_avaliacoes: Number(prestador.total_notas_avaliacoes) > 0
@@ -674,6 +705,71 @@ app.get('/prestadores', (req, res) => {
 
 
 
+app.get('/servicos/anuncios', async (req, res) => {
+    const servicoBusca = String(req.query.servico || '').trim();
+    const cidadeBusca = String(req.query.cidade || '').trim();
+    const filtros = ['s.disponivel = 1', 'p.admin_ativo = 1', 'u.ativo = 1'];
+    const parametros = [];
+    if (servicoBusca) {
+        filtros.push('(LOWER(s.nome_servico) LIKE LOWER(?) OR LOWER(COALESCE(s.especialidades, \'\')) LIKE LOWER(?))');
+        parametros.push(`%${servicoBusca}%`, `%${servicoBusca}%`);
+    }
+    if (cidadeBusca) {
+        const partes = cidadeBusca.split(',').map(parte => parte.trim()).filter(Boolean);
+        if (partes.length > 1) {
+            filtros.push('(LOWER(COALESCE(s.cidade, p.cidade)) LIKE LOWER(?) AND LOWER(COALESCE(s.estado, p.estado)) LIKE LOWER(?))');
+            parametros.push(`%${partes[0]}%`, `%${partes.slice(1).join(' ')}%`);
+        } else {
+            filtros.push('(LOWER(COALESCE(s.cidade, p.cidade)) LIKE LOWER(?) OR LOWER(COALESCE(s.estado, p.estado)) LIKE LOWER(?))');
+            parametros.push(`%${cidadeBusca}%`, `%${cidadeBusca}%`);
+        }
+    }
+    try {
+        const servicos = await consultar(
+            `SELECT s.id_servico, s.id_prestador, s.nome_servico, s.descricao,
+                    s.valor_diaria, s.valor_negociavel, s.disponivel,
+                    COALESCE(s.cidade, p.cidade) AS cidade,
+                    COALESCE(s.estado, p.estado) AS estado,
+                    s.especialidades, p.verificado, p.admin_ativo,
+                    p.valor_diaria AS valor_diaria_perfil, p.avaliacao, p.total_avaliacoes,
+                    u.nome, u.telefone, u.foto_perfil, p.foto,
+                    (SELECT AVG(a.nota) FROM avaliacoes_solicitacoes a
+                     WHERE a.id_prestador = p.id_prestador AND a.alvo = 'PRESTADOR'
+                       AND a.nota IS NOT NULL AND a.moderacao_status = 'VISIVEL') AS nota_media_avaliacoes,
+                    (SELECT COUNT(*) FROM avaliacoes_solicitacoes a
+                     WHERE a.id_prestador = p.id_prestador AND a.alvo = 'PRESTADOR'
+                       AND a.nota IS NOT NULL AND a.moderacao_status = 'VISIVEL') AS total_notas_avaliacoes,
+                    (SELECT GROUP_CONCAT(f.url_foto ORDER BY f.id_foto SEPARATOR '|||')
+                     FROM fotos_servicos f WHERE f.id_servico = s.id_servico) AS fotos,
+                    (SELECT GROUP_CONCAT(fp.url_foto ORDER BY fp.id_foto SEPARATOR '|||')
+                     FROM fotos_prestadores fp WHERE fp.id_prestador = p.id_prestador) AS fotos_trabalhos
+             FROM servicos s
+             INNER JOIN prestadores p ON p.id_prestador = s.id_prestador
+             INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+             WHERE ${filtros.join(' AND ')}
+             ORDER BY s.id_servico DESC`,
+            parametros
+        );
+        return res.json(servicos.map(item => ({
+            ...item,
+            id_servico: Number(item.id_servico),
+            id_prestador: Number(item.id_prestador),
+            profissao: item.nome_servico,
+            valor_negociavel: Number(item.valor_negociavel) === 1,
+            avaliacao: item.nota_media_avaliacoes !== null && item.nota_media_avaliacoes !== undefined
+                ? Number(item.nota_media_avaliacoes) : item.avaliacao,
+            total_avaliacoes: Number(item.total_notas_avaliacoes) > 0
+                ? Number(item.total_notas_avaliacoes) : Number(item.total_avaliacoes) || 0,
+            especialidades: normalizarListaEspecialidades(item.especialidades),
+            fotos: dividirListaAgregada(item.fotos),
+            fotos_trabalhos: dividirListaAgregada(item.fotos_trabalhos)
+        })));
+    } catch (erro) {
+        console.error('ERRO AO LISTAR ANUNCIOS DE SERVICOS:', erro.code || erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Nao foi possivel carregar os servicos.' });
+    }
+});
+
 // ===============================
 // LISTAR EQUIPAMENTOS
 // ===============================
@@ -688,8 +784,8 @@ app.get('/equipamentos', (req, res) => {
             e.*,
             MAX(u.nome) AS nome,
             MAX(p.id_usuario) AS id_usuario_prestador,
-            MAX(p.cidade) AS cidade,
-            MAX(p.estado) AS estado,
+            MAX(COALESCE(e.cidade, p.cidade)) AS cidade,
+            MAX(COALESCE(e.estado, p.estado)) AS estado,
             (SELECT AVG(av.nota) FROM avaliacoes_solicitacoes av
              WHERE av.id_equipamento = e.id_equipamento AND av.alvo = 'EQUIPAMENTO' AND av.nota IS NOT NULL AND av.moderacao_status = 'VISIVEL') AS nota_media_avaliacoes,
             (SELECT COUNT(*) FROM avaliacoes_solicitacoes av
@@ -711,7 +807,7 @@ app.get('/equipamentos', (req, res) => {
         LEFT JOIN fotos_equipamentos f
             ON e.id_equipamento = f.id_equipamento
 
-        WHERE e.admin_visivel = 1 AND u.ativo = 1 AND p.admin_ativo = 1
+            WHERE e.admin_visivel = 1 AND e.disponivel = 1 AND u.ativo = 1 AND p.admin_ativo = 1
         GROUP BY e.id_equipamento
 
         ORDER BY e.id_equipamento DESC
@@ -771,7 +867,7 @@ app.post('/cadastro-equipamento', autenticar, upload.array('fotos', 5), async (r
     let conexao;
     let transacaoAtiva = false;
     try {
-        const prestadores = await consultar('SELECT id_prestador FROM prestadores WHERE id_usuario = ?', [id_usuario]);
+        const prestadores = await consultar('SELECT id_prestador, cidade, estado FROM prestadores WHERE id_usuario = ?', [id_usuario]);
         if (!prestadores.length) {
             removerUploadsRecebidos(req);
             return res.status(404).json({ sucesso: false, mensagem: 'Profissional nao encontrado.' });
@@ -784,8 +880,10 @@ app.post('/cadastro-equipamento', autenticar, upload.array('fotos', 5), async (r
         await conexao.beginTransaction();
         transacaoAtiva = true;
         await consultarNaConexao(conexao,
-            'INSERT INTO equipamentos (id_equipamento, id_prestador, nome_equipamento, tipo_equipamento, descricao, valor_diaria, quantidade, disponivel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [idEquipamento, prestadores[0].id_prestador, nome_equipamento, tipo_equipamento, descricao, valor_diaria, quantidade, 1]);
+            'INSERT INTO equipamentos (id_equipamento, id_prestador, nome_equipamento, tipo_equipamento, descricao, valor_diaria, quantidade, disponivel, cidade, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [idEquipamento, prestadores[0].id_prestador, nome_equipamento, tipo_equipamento, descricao, valor_diaria, quantidade, 1,
+                String(req.body.cidade || prestadores[0].cidade || '').trim() || null,
+                String(req.body.estado || prestadores[0].estado || '').trim() || null]);
         for (const caminho of caminhosEnviados) await salvarReferenciaFotoEquipamento(idEquipamento, caminho, conexao);
         await conexao.commit();
         transacaoAtiva = false;
@@ -873,9 +971,12 @@ app.get('/meus-anuncios/:id_usuario', autenticar, (req, res) => {
                 return res.json({
                     sucesso: true,
                     prestador: null,
-                    equipamentos: []
+                    equipamentos: [],
+                    servicos: []
                 });
             }
+
+            prestador.valor_negociavel = prestador.valor_diaria === null || prestador.valor_diaria === undefined;
 
             prestador.fotos = prestador.fotos
                 ? prestador.fotos.split('|||')
@@ -886,6 +987,8 @@ app.get('/meus-anuncios/:id_usuario', autenticar, (req, res) => {
                 `
                 SELECT
                     e.*,
+                    COALESCE(e.cidade, (SELECT p2.cidade FROM prestadores p2 WHERE p2.id_prestador = e.id_prestador)) AS cidade_anuncio,
+                    COALESCE(e.estado, (SELECT p2.estado FROM prestadores p2 WHERE p2.id_prestador = e.id_prestador)) AS estado_anuncio,
 
                     (
                         SELECT GROUP_CONCAT(
@@ -922,11 +1025,26 @@ app.get('/meus-anuncios/:id_usuario', autenticar, (req, res) => {
                         fotos: e.fotos ? e.fotos.split('|||') : []
                     }));
 
-                    res.json({
-                        sucesso: true,
-                        prestador,
-                        equipamentos
-                    });
+                    db.query(
+                        `SELECT s.*,
+                                (SELECT GROUP_CONCAT(f.url_foto ORDER BY f.id_foto SEPARATOR '|||')
+                                 FROM fotos_servicos f WHERE f.id_servico = s.id_servico) AS fotos
+                         FROM servicos s WHERE s.id_prestador = ? ORDER BY s.id_servico DESC`,
+                        [prestador.id_prestador],
+                        (erroServicos, resultadoServicos) => {
+                            if (erroServicos) {
+                                console.error('ERRO AO BUSCAR SERVIÇOS:', erroServicos.code || erroServicos.message);
+                                return res.status(500).json({ sucesso: false, mensagem: 'Erro ao buscar serviços.' });
+                            }
+                            const servicos = resultadoServicos.map(servico => ({
+                                ...servico,
+                                valor_negociavel: Number(servico.valor_negociavel) === 1,
+                                especialidades: normalizarListaEspecialidades(servico.especialidades),
+                                fotos: dividirListaAgregada(servico.fotos)
+                            }));
+                            res.json({ sucesso: true, prestador, equipamentos, servicos });
+                        }
+                    );
 
                 }
             );
@@ -934,6 +1052,154 @@ app.get('/meus-anuncios/:id_usuario', autenticar, (req, res) => {
         }
     );
 
+});
+
+function middlewareUploadServicos(req, res, next) {
+    upload.array('fotos', 5)(req, res, erro => {
+        if (!erro) return next();
+        removerUploadsRecebidos(req);
+        const mensagem = erro.code === 'LIMIT_FILE_SIZE'
+            ? 'Cada imagem deve ter no máximo 5 MB.'
+            : erro.code === 'LIMIT_UNEXPECTED_FILE'
+                ? 'O serviço pode ter no máximo cinco fotos.'
+                : erro.message || 'Não foi possível receber as imagens.';
+        return res.status(400).json({ sucesso: false, mensagem });
+    });
+}
+
+function validarDadosServico(corpo = {}) {
+    const nome = String(corpo.nome_servico || '').trim();
+    const descricao = String(corpo.descricao || '').trim();
+    const cidade = String(corpo.cidade || '').trim();
+    const estado = String(corpo.estado || '').trim();
+    const negociavel = ['1', 'true', 'on'].includes(String(corpo.valor_negociavel || '').toLowerCase());
+    const valor = negociavel || String(corpo.valor_diaria ?? '').trim() === '' ? null : Number(corpo.valor_diaria);
+    const especialidades = normalizarListaEspecialidades(corpo.especialidades);
+    if (!nome || nome.length > 100 || descricao.length > 4000 || !cidade || cidade.length > 100 || !estado || estado.length > 50 ||
+        (!negociavel && (!Number.isFinite(valor) || valor < 0 || valor > 99999999.99)) || especialidades.length > 10) return null;
+    return { nome, descricao, cidade, estado, negociavel, valor, especialidades };
+}
+
+async function buscarServicoDoUsuario(idServico, idUsuario) {
+    const linhas = await consultar(
+        `SELECT s.id_servico, s.id_prestador FROM servicos s
+         INNER JOIN prestadores p ON p.id_prestador = s.id_prestador
+         WHERE s.id_servico = ? AND p.id_usuario = ? LIMIT 1`,
+        [idServico, idUsuario]
+    );
+    return linhas[0] || null;
+}
+
+async function salvarFotoServico(idServico, caminho, conexao) {
+    const sequencia = await consultarNaConexao(conexao, 'INSERT INTO fotos_servicos_id_seq () VALUES ()');
+    await consultarNaConexao(conexao,
+        'INSERT INTO fotos_servicos (id_foto, id_servico, url_foto) VALUES (?, ?, ?)',
+        [sequencia.insertId, idServico, caminho]);
+}
+
+app.post('/servicos', autenticar, middlewareUploadServicos, async (req, res) => {
+    const dados = validarDadosServico(req.body);
+    if (!dados) { removerUploadsRecebidos(req); return res.status(400).json({ sucesso: false, mensagem: 'Confira os dados do serviço e o valor informado.' }); }
+    if ((req.files || []).length > 5) { removerUploadsRecebidos(req); return res.status(400).json({ sucesso: false, mensagem: 'O serviço pode ter no máximo cinco fotos.' }); }
+    let idServico;
+    let caminhos = [];
+    let conexao;
+    let transacaoAtiva = false;
+    try {
+        if (String(req.usuarioAutenticado.tipo_usuario).toUpperCase() !== 'PRESTADOR') return res.status(403).json({ sucesso: false, mensagem: 'Somente prestadores podem cadastrar serviços.' });
+        const prestadores = await consultar('SELECT id_prestador FROM prestadores WHERE id_usuario = ? LIMIT 1', [req.usuarioAutenticado.id_usuario]);
+        if (!prestadores[0]) return res.status(404).json({ sucesso: false, mensagem: 'Perfil profissional não encontrado.' });
+        const sequencia = await consultar('INSERT INTO servicos_id_seq () VALUES ()');
+        idServico = Number(sequencia.insertId);
+        caminhos = await guardarImagensNoSupabase(req.files || [], 'servico', idServico);
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction(); transacaoAtiva = true;
+        await consultarNaConexao(conexao,
+            `INSERT INTO servicos (id_servico, id_prestador, nome_servico, descricao, valor_diaria, disponivel, cidade, estado, valor_negociavel, especialidades)
+             VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+            [idServico, prestadores[0].id_prestador, dados.nome, dados.descricao || null, dados.valor, dados.cidade, dados.estado, Number(dados.negociavel), JSON.stringify(dados.especialidades)]);
+        for (const caminho of caminhos) await salvarFotoServico(idServico, caminho, conexao);
+        await conexao.commit(); transacaoAtiva = false;
+        removerUploadsRecebidos(req);
+        return res.status(201).json({ sucesso: true, id_servico: idServico });
+    } catch (erro) {
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        removerUploadsRecebidos(req);
+        for (const caminho of caminhos) await removerFotoPrestadorSeSemReferencias(caminho, 'servico', idServico).catch(() => {});
+        if (erro.code === 'IMAGE_INVALID_FILE') return res.status(400).json({ sucesso: false, mensagem: erro.message });
+        console.error('ERRO AO CADASTRAR SERVIÇO:', erro.code || erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível cadastrar o serviço.' });
+    } finally { if (conexao) conexao.release(); }
+});
+
+app.put('/servicos/:id', autenticar, middlewareUploadServicos, async (req, res) => {
+    const idServico = Number(req.params.id);
+    const dados = validarDadosServico(req.body);
+    if (!Number.isInteger(idServico) || idServico <= 0 || !dados) { removerUploadsRecebidos(req); return res.status(400).json({ sucesso: false, mensagem: 'Confira os dados do serviço.' }); }
+    let caminhosNovos = [];
+    let conexao;
+    let transacaoAtiva = false;
+    try {
+        const servico = await buscarServicoDoUsuario(idServico, req.usuarioAutenticado.id_usuario);
+        if (!servico) { removerUploadsRecebidos(req); return res.status(404).json({ sucesso: false, mensagem: 'Serviço não encontrado.' }); }
+        const atuais = await consultar('SELECT id_foto, url_foto FROM fotos_servicos WHERE id_servico = ? ORDER BY id_foto', [idServico]);
+        let manter = [];
+        try { manter = JSON.parse(req.body.fotosManter || '[]'); } catch { manter = []; }
+        if (!Array.isArray(manter)) manter = [];
+        const urlsManter = new Set(manter.filter(url => atuais.some(f => f.url_foto === url)));
+        if (urlsManter.size + (req.files || []).length > 5) { removerUploadsRecebidos(req); return res.status(400).json({ sucesso: false, mensagem: 'O serviço pode ter no máximo cinco fotos.' }); }
+        caminhosNovos = await guardarImagensNoSupabase(req.files || [], 'servico', idServico);
+        conexao = await db.promise().getConnection();
+        await conexao.beginTransaction(); transacaoAtiva = true;
+        await consultarNaConexao(conexao,
+            `UPDATE servicos SET nome_servico = ?, descricao = ?, valor_diaria = ?, cidade = ?, estado = ?, valor_negociavel = ?, especialidades = ?
+             WHERE id_servico = ? AND id_prestador = ?`,
+            [dados.nome, dados.descricao || null, dados.valor, dados.cidade, dados.estado, Number(dados.negociavel), JSON.stringify(dados.especialidades), idServico, servico.id_prestador]);
+        const removidas = atuais.filter(f => !urlsManter.has(f.url_foto));
+        for (const foto of removidas) await consultarNaConexao(conexao, 'DELETE FROM fotos_servicos WHERE id_foto = ? AND id_servico = ?', [foto.id_foto, idServico]);
+        for (const caminho of caminhosNovos) await salvarFotoServico(idServico, caminho, conexao);
+        await conexao.commit(); transacaoAtiva = false;
+        removerUploadsRecebidos(req);
+        await removerImagensLegadasOuSupabase(removidas.map(f => f.url_foto), 'servico', idServico).catch(erro => console.error('FALHA AO REMOVER FOTO ANTIGA DE SERVIÇO:', erro.code || 'ERRO'));
+        return res.json({ sucesso: true });
+    } catch (erro) {
+        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
+        removerUploadsRecebidos(req);
+        for (const caminho of caminhosNovos) await removerFotoPrestadorSeSemReferencias(caminho, 'servico', idServico).catch(() => {});
+        if (erro.code === 'IMAGE_INVALID_FILE') return res.status(400).json({ sucesso: false, mensagem: erro.message });
+        console.error('ERRO AO EDITAR SERVIÇO:', erro.code || erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível atualizar o serviço.' });
+    } finally { if (conexao) conexao.release(); }
+});
+
+app.patch('/servicos/:id/disponibilidade', autenticar, async (req, res) => {
+    const idServico = Number(req.params.id);
+    const disponivel = Number(req.body.disponivel);
+    if (!Number.isInteger(idServico) || idServico <= 0 || ![0, 1].includes(disponivel)) return res.status(400).json({ sucesso: false, mensagem: 'Disponibilidade inválida.' });
+    try {
+        const servico = await buscarServicoDoUsuario(idServico, req.usuarioAutenticado.id_usuario);
+        if (!servico) return res.status(404).json({ sucesso: false, mensagem: 'Serviço não encontrado.' });
+        await consultar('UPDATE servicos SET disponivel = ? WHERE id_servico = ? AND id_prestador = ?', [disponivel, idServico, servico.id_prestador]);
+        return res.json({ sucesso: true, disponivel });
+    } catch (erro) {
+        console.error('ERRO AO ALTERAR DISPONIBILIDADE DO SERVIÇO:', erro.code || erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível alterar a disponibilidade.' });
+    }
+});
+
+app.delete('/servicos/:id', autenticar, async (req, res) => {
+    const idServico = Number(req.params.id);
+    if (!Number.isInteger(idServico) || idServico <= 0) return res.status(400).json({ sucesso: false, mensagem: 'Serviço inválido.' });
+    try {
+        const servico = await buscarServicoDoUsuario(idServico, req.usuarioAutenticado.id_usuario);
+        if (!servico) return res.status(404).json({ sucesso: false, mensagem: 'Serviço não encontrado.' });
+        // Desativa para preservar solicitações, avaliações e imagens ligadas ao histórico.
+        await consultar('UPDATE servicos SET disponivel = 0 WHERE id_servico = ? AND id_prestador = ?', [idServico, servico.id_prestador]);
+        return res.json({ sucesso: true, removido: true });
+    } catch (erro) {
+        console.error('ERRO AO EXCLUIR SERVIÇO:', erro.code || erro.message);
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível excluir o serviço.' });
+    }
 });
 
 function consultar(sql, valores = []) {
@@ -1010,8 +1276,10 @@ app.put('/equipamentos/:id', autenticar, upload.array('fotos', 5), async (req, r
         await conexao.beginTransaction();
         transacaoAtiva = true;
         await consultarNaConexao(conexao,
-            'UPDATE equipamentos SET nome_equipamento = ?, tipo_equipamento = ?, descricao = ?, valor_diaria = ?, quantidade = ? WHERE id_equipamento = ? AND id_prestador = ?',
-            [nome_equipamento.trim(), tipo_equipamento.trim(), descricao || '', valor, qtd, idEquipamento, anuncio.id_prestador]);
+            'UPDATE equipamentos SET nome_equipamento = ?, tipo_equipamento = ?, descricao = ?, valor_diaria = ?, quantidade = ?, cidade = ?, estado = ? WHERE id_equipamento = ? AND id_prestador = ?',
+            [nome_equipamento.trim(), tipo_equipamento.trim(), descricao || '', valor, qtd,
+                String(req.body.cidade || '').trim() || null, String(req.body.estado || '').trim() || null,
+                idEquipamento, anuncio.id_prestador]);
 
         const fotosRemovidas = fotosAtuais.filter(foto => !urlsManter.has(foto.url_foto));
         for (const foto of fotosRemovidas) {
@@ -1067,28 +1335,14 @@ app.delete('/equipamentos/:id', autenticar, async (req, res) => {
     if (!Number.isInteger(idEquipamento) || idEquipamento <= 0)
         return res.status(400).json({ sucesso: false, mensagem: 'Anuncio invalido.' });
 
-    let conexao;
-    let transacaoAtiva = false;
     try {
         const anuncio = await buscarAnuncioDoUsuario(idEquipamento, req.usuarioAutenticado.id_usuario);
         if (!anuncio) return res.status(404).json({ sucesso: false, mensagem: 'Anuncio nao encontrado.' });
-        const fotos = await consultar('SELECT id_foto, url_foto FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
-        conexao = await db.promise().getConnection();
-        await conexao.beginTransaction();
-        transacaoAtiva = true;
-        await consultarNaConexao(conexao, 'DELETE FROM fotos_equipamentos WHERE id_equipamento = ?', [idEquipamento]);
-        await consultarNaConexao(conexao, 'DELETE FROM equipamentos WHERE id_equipamento = ? AND id_prestador = ?', [idEquipamento, anuncio.id_prestador]);
-        await conexao.commit();
-        transacaoAtiva = false;
-        try { await removerImagensLegadasOuSupabase(fotos.map(foto => foto.url_foto), 'equipamento', idEquipamento); }
-        catch (erroLimpeza) { console.error('FALHA AO LIMPAR FOTOS DO AN?NCIO EXCLU?DO:', erroLimpeza.code || 'ERRO'); }
-        return res.json({ sucesso: true });
+        await consultar('UPDATE equipamentos SET disponivel = 0 WHERE id_equipamento = ? AND id_prestador = ?', [idEquipamento, anuncio.id_prestador]);
+        return res.json({ sucesso: true, removido: true, disponivel: 0, preservado: true });
     } catch (erro) {
-        if (transacaoAtiva && conexao) await conexao.rollback().catch(() => {});
         console.error('ERRO AO EXCLUIR EQUIPAMENTO:', erro.code || erro.message);
         return res.status(500).json({ sucesso: false, mensagem: 'Nao foi possivel excluir o anuncio.' });
-    } finally {
-        if (conexao) conexao.release();
     }
 });
 
@@ -1377,6 +1631,7 @@ app.post('/solicitacoes', autenticar, async (req, res) => {
     const dataFim = String(corpo.data_fim || '').trim();
     const quantidadeRecebida = corpo.quantidade;
     const idPrestadorRecebido = Number(corpo.id_prestador);
+    const idServicoRecebido = Number(corpo.id_servico);
     const idEquipamentoRecebido = Number(corpo.id_equipamento);
 
     if (!['SERVICO', 'EQUIPAMENTO'].includes(tipo) ||
@@ -1387,8 +1642,9 @@ app.post('/solicitacoes', autenticar, async (req, res) => {
         return res.status(400).json({ sucesso: false, mensagem: 'Confira os dados obrigatórios da solicitação.' });
     }
 
-    if (tipo === 'SERVICO' && (!Number.isInteger(idPrestadorRecebido) || idPrestadorRecebido <= 0 ||
-        !tituloRecebido || tituloRecebido.length > 150 || dataFim)) {
+    if (tipo === 'SERVICO' && (((!Number.isInteger(idServicoRecebido) || idServicoRecebido <= 0) &&
+        (!Number.isInteger(idPrestadorRecebido) || idPrestadorRecebido <= 0)) ||
+        tituloRecebido.length > 150 || dataFim)) {
         return res.status(400).json({ sucesso: false, mensagem: 'Informe o serviço, o profissional e a data prevista.' });
     }
 
@@ -1423,24 +1679,39 @@ app.post('/solicitacoes', autenticar, async (req, res) => {
 
         let idPrestador = idPrestadorRecebido;
         let idEquipamento = null;
+        let idServico = null;
         let titulo = tituloRecebido;
         let valorDiaria = null;
 
         if (tipo === 'SERVICO') {
-            const prestadores = await consultarNaConexao(
-                conexao,
-                `SELECT p.id_prestador, p.id_usuario, p.admin_ativo, u.tipo_usuario, u.ativo
-                 FROM prestadores p INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
-                 WHERE p.id_prestador = ? LIMIT 1`,
-                [idPrestador]
-            );
-            if (!prestadores[0] || String(prestadores[0].tipo_usuario).toUpperCase() !== 'PRESTADOR' || Number(prestadores[0].admin_ativo) !== 1 || Number(prestadores[0].ativo) !== 1) {
+            const prestadores = idServicoRecebido > 0
+                ? await consultarNaConexao(conexao,
+                    `SELECT s.id_servico, s.id_prestador, s.nome_servico, s.valor_diaria, s.valor_negociavel,
+                            s.disponivel AS servico_disponivel, p.id_usuario, p.admin_ativo, u.tipo_usuario, u.ativo
+                     FROM servicos s INNER JOIN prestadores p ON p.id_prestador = s.id_prestador
+                     INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+                     WHERE s.id_servico = ? FOR UPDATE`, [idServicoRecebido])
+                : await consultarNaConexao(conexao,
+                    `SELECT p.id_prestador, p.id_usuario, p.admin_ativo, u.tipo_usuario, u.ativo
+                     FROM prestadores p INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+                     WHERE p.id_prestador = ? LIMIT 1`, [idPrestador]);
+            const prestadorAlvo = prestadores[0];
+            if (!prestadorAlvo || String(prestadorAlvo.tipo_usuario).toUpperCase() !== 'PRESTADOR' || Number(prestadorAlvo.admin_ativo) !== 1 || Number(prestadorAlvo.ativo) !== 1 || (idServicoRecebido > 0 && Number(prestadorAlvo.servico_disponivel) !== 1)) {
                 await conexao.rollback(); transacaoAtiva = false;
                 return res.status(404).json({ sucesso: false, mensagem: 'Profissional não encontrado.' });
             }
-            if (Number(prestadores[0].id_usuario) === idCliente) {
+            if (Number(prestadorAlvo.id_usuario) === idCliente) {
                 await conexao.rollback(); transacaoAtiva = false;
                 return res.status(400).json({ sucesso: false, mensagem: 'Você não pode solicitar um serviço para si mesmo.' });
+            }
+            idPrestador = Number(prestadorAlvo.id_prestador);
+            if (idServicoRecebido > 0) {
+                idServico = Number(prestadorAlvo.id_servico);
+                titulo = String(prestadorAlvo.nome_servico);
+                valorDiaria = Number(prestadorAlvo.valor_negociavel) === 1 ? null : prestadorAlvo.valor_diaria;
+            } else if (!tituloRecebido) {
+                await conexao.rollback(); transacaoAtiva = false;
+                return res.status(400).json({ sucesso: false, mensagem: 'Informe o serviço desejado.' });
             }
         } else {
             const equipamentos = await consultarNaConexao(
@@ -1495,11 +1766,11 @@ app.post('/solicitacoes', autenticar, async (req, res) => {
         await consultarNaConexao(
             conexao,
             `INSERT INTO solicitacoes
-                (id_solicitacao, chave_idempotencia, id_cliente, id_prestador, id_equipamento,
+                (id_solicitacao, chave_idempotencia, id_cliente, id_prestador, id_equipamento, id_servico,
                  id_conversa, tipo, titulo, descricao, local_atendimento, data_inicio, data_fim,
                  quantidade, valor_diaria, observacoes, status, cliente_visualizou_em)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AGUARDANDO_RESPOSTA', CURRENT_TIMESTAMP)`,
-            [sequencia.insertId, idempotencia, idCliente, idPrestador, idEquipamento, idConversa,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AGUARDANDO_RESPOSTA', CURRENT_TIMESTAMP)`,
+            [sequencia.insertId, idempotencia, idCliente, idPrestador, idEquipamento, idServico, idConversa,
                 tipo, titulo, descricao, local, dataInicio, tipo === 'EQUIPAMENTO' ? dataFim : null,
                 quantidade, valorDiaria, observacoes || null]
         );
@@ -1527,7 +1798,7 @@ app.post('/solicitacoes', autenticar, async (req, res) => {
 });
 
 const SQL_LISTA_SOLICITACOES = `
-    SELECT s.id_solicitacao, s.id_cliente, s.id_prestador, s.id_equipamento,
+    SELECT s.id_solicitacao, s.id_cliente, s.id_prestador, s.id_equipamento, s.id_servico,
            s.id_conversa, s.tipo, s.titulo, s.descricao, s.local_atendimento,
            s.data_inicio, s.data_fim, s.quantidade, s.valor_diaria, s.observacoes,
            s.status, s.confirmada_cliente, s.data_confirmacao_cliente,
@@ -1535,7 +1806,7 @@ const SQL_LISTA_SOLICITACOES = `
            s.data_criacao, s.data_atualizacao,
            EXISTS(SELECT 1 FROM avaliacoes_solicitacoes av WHERE av.id_solicitacao = s.id_solicitacao) AS possui_avaliacao,
            uc.nome AS nome_contratante, up.nome AS nome_prestador,
-           e.nome_equipamento AS nome_equipamento_atual,
+           e.nome_equipamento AS nome_equipamento_atual, sv.nome_servico AS nome_servico_atual,
            DATE_FORMAT(s.data_inicio, '%Y-%m-%d') AS data_inicio_iso,
            DATE_FORMAT(s.data_fim, '%Y-%m-%d') AS data_fim_iso
     FROM solicitacoes s
@@ -1543,6 +1814,7 @@ const SQL_LISTA_SOLICITACOES = `
     INNER JOIN prestadores p ON p.id_prestador = s.id_prestador
     INNER JOIN usuarios up ON up.id_usuario = p.id_usuario
     LEFT JOIN equipamentos e ON e.id_equipamento = s.id_equipamento
+    LEFT JOIN servicos sv ON sv.id_servico = s.id_servico
 `;
 
 app.get('/solicitacoes/minhas', autenticar, async (req, res) => {
@@ -1738,7 +2010,7 @@ app.post('/solicitacoes/:id/avaliacao', autenticar, async (req, res) => {
         transacaoAtiva = true;
         const pedidos = await consultarNaConexao(
             conexao,
-            `SELECT id_solicitacao, id_cliente, id_prestador, id_equipamento, tipo, status, confirmada_cliente
+            `SELECT id_solicitacao, id_cliente, id_prestador, id_equipamento, id_servico, tipo, status, confirmada_cliente
              FROM solicitacoes WHERE id_solicitacao = ? FOR UPDATE`,
             [idSolicitacao]
         );
@@ -1761,10 +2033,11 @@ app.post('/solicitacoes/:id/avaliacao', autenticar, async (req, res) => {
         await consultarNaConexao(
             conexao,
             `INSERT INTO avaliacoes_solicitacoes
-                (id_avaliacao, id_solicitacao, id_cliente, id_prestador, id_equipamento, alvo, nota, comentario)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                (id_avaliacao, id_solicitacao, id_cliente, id_prestador, id_equipamento, id_servico, alvo, nota, comentario)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [sequencia.insertId, idSolicitacao, idCliente, pedido.id_prestador,
                 alvo === 'EQUIPAMENTO' ? pedido.id_equipamento : null,
+                pedido.id_servico || null,
                 alvo, notaRecebida === 0 ? null : notaRecebida, comentario || null]
         );
         await conexao.commit();

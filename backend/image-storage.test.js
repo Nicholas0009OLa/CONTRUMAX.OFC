@@ -68,6 +68,15 @@ test('gera chaves relativas gerenciadas e valida a propriedade por categoria e I
     assert.throws(() => criarCaminhoObjeto('equipamento', 0, 'x.png'));
 });
 
+test('gera e confere chaves de imagens de serviços por ID do anúncio', () => {
+    const caminho = criarCaminhoObjeto('servico', 84, 'servico.webp');
+    assert.match(caminho, /^servicos\/84\/[a-f0-9-]{36}\.webp$/i);
+    assert.equal(caminhoObjetoGerenciado(caminho), true);
+    assert.equal(caminhoObjetoPertenceA(caminho, 'servico', 84), true);
+    assert.equal(caminhoObjetoPertenceA(caminho, 'servico', 85), false);
+    assert.equal(caminhoObjetoPertenceA(caminho, 'equipamento', 84), false);
+});
+
 test('envia imagem com MIME derivado dos bytes e mantem a chave privada no backend', async () => {
     const { armazenamento, chamadas } = armazenamentoFake();
     const caminho = criarCaminhoObjeto('equipamento', 9, 'maquina.png');

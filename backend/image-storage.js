@@ -5,7 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const TAMANHO_MAXIMO_IMAGEM = 5 * 1024 * 1024;
 const UUID = '[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}';
 // Keep previously stored objects manageable, even if their extension predates the upload allowlist.
-const PADRAO_OBJETO_CONSTRUMAX = new RegExp(`^(?:prestadores/\\d+/(?:perfil|trabalhos)|equipamentos/\\d+|usuarios/\\d+/perfil)/${UUID}\\.[a-z0-9]{1,8}$`, 'i');
+const PADRAO_OBJETO_CONSTRUMAX = new RegExp(`^(?:prestadores/\\d+/(?:perfil|trabalhos)|equipamentos/\\d+|servicos/\\d+|usuarios/\\d+/perfil)/${UUID}\\.[a-z0-9]{1,8}$`, 'i');
 
 function detectarTipoImagem(buffer) {
     if (!Buffer.isBuffer(buffer)) return null;
@@ -36,6 +36,7 @@ function criarCaminhoObjeto(categoria, idRegistro, nomeOriginal = '') {
         perfilPrestador: `prestadores/${id}/perfil`,
         trabalhosPrestador: `prestadores/${id}/trabalhos`,
         equipamento: `equipamentos/${id}`,
+        servico: `servicos/${id}`,
         perfilUsuario: `usuarios/${id}/perfil`
     };
     const pasta = pastas[categoria];
@@ -57,6 +58,7 @@ function caminhoObjetoPertenceA(caminho, categoria, idRegistro) {
         perfilPrestador: `prestadores/${id}/perfil/`,
         trabalhosPrestador: `prestadores/${id}/trabalhos/`,
         equipamento: `equipamentos/${id}/`,
+        servico: `servicos/${id}/`,
         perfilUsuario: `usuarios/${id}/perfil/`
     };
     const prefixo = prefixos[categoria];
