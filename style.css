@@ -391,41 +391,42 @@
   .machines .section-title { color: var(--white); }
   .machines .section-sub { color: #888; }
   .machines-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 2px; }
-  .machine-card { position: relative; overflow: hidden; background: var(--dark2); cursor: pointer; }
+  .machine-card { position: relative; display: flex; height: 100%; min-width: 0; flex-direction: column; overflow: hidden; background: var(--dark2); cursor: pointer; }
   .machine-img { width: 100%; height: 220px; object-fit: cover; display: block; transition: transform .4s; filter: brightness(0.8); }
   .machine-card:hover .machine-img { transform: scale(1.05); filter: brightness(1); }
-  .machine-info { padding: 20px; border-top: 2px solid transparent; transition: border-color .2s; }
+  .machine-info { display: flex; flex: 1; min-width: 0; flex-direction: column; padding: 20px; border-top: 2px solid transparent; transition: border-color .2s; }
   .machine-card:hover .machine-info { border-color: var(--yellow); }
-  .machine-info h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 800; text-transform: uppercase; color: var(--white); margin-bottom: 8px; }
-  .machine-features { list-style: none; margin-bottom: 16px; }
-  .machine-features li { font-size: 12px; color: #888; padding: 3px 0; display: flex; align-items: center; gap: 6px; }
+  .machine-info h3 { display: -webkit-box; min-height: 2.3em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 800; line-height: 1.15; text-transform: uppercase; color: var(--white); margin-bottom: 8px; }
+  .machine-features { flex: 1; list-style: none; margin-bottom: 16px; }
+  .machine-features li { min-width: 0; font-size: 12px; color: #888; padding: 3px 0; display: flex; align-items: center; gap: 6px; }
   .machine-features li::before { content: ''; width: 6px; height: 6px; background: var(--yellow); display: block; flex-shrink: 0; }
-  .btn-quote { background: var(--yellow); color: var(--black); border: none; padding: 10px 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: background .2s; width: 100%; font-family: 'Inter', sans-serif; }
+  .machine-features li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btn-quote { flex-shrink: 0; margin-top: auto; background: var(--yellow); color: var(--black); border: none; padding: 10px 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: background .2s; width: 100%; font-family: 'Inter', sans-serif; }
   .btn-quote:hover { background: var(--yellow-dark); }
   .btn-quote:disabled { background: #555; color: #bbb; cursor: not-allowed; }
 
   /* ─── PROFESSIONALS ─────────────────────────────── */
   .professionals { background: var(--white); }
   .prof-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 24px; }
-  .prof-card { border: 1px solid #EBEBEB; padding: 28px 24px; transition: border-color .2s, transform .2s, box-shadow .2s; cursor: pointer; position: relative; overflow: hidden; }
+  .prof-card { display: flex; height: 100%; min-width: 0; box-sizing: border-box; flex-direction: column; border: 1px solid #EBEBEB; padding: 28px 24px; transition: border-color .2s, transform .2s, box-shadow .2s; cursor: pointer; position: relative; overflow: hidden; }
   .prof-card::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: var(--yellow); transform: scaleX(0); transform-origin: left; transition: transform .25s; }
   .prof-card:hover { border-color: var(--yellow); transform: translateY(-4px); box-shadow: 0 12px 36px rgba(0,0,0,0.08); }
   .prof-card:hover::after { transform: scaleX(1); }
-  .prof-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .prof-header { display: flex; min-height: 100px; align-items: center; gap: 16px; margin-bottom: 16px; }
   .prof-avatar { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: var(--black); font-family: 'Barlow Condensed', sans-serif; flex-shrink: 0; background: var(--yellow); }
   .prof-meta { flex: 1; min-width: 0; }
   .prof-meta { flex: 1; min-width: 0; }
-  .prof-name { font-weight: 700; font-size: 15px; color: var(--black); }
-  .prof-role { font-size: 12px; color: var(--yellow); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-  .prof-stars { color: var(--yellow); font-size: 13px; margin-bottom: 12px; }
+  .prof-name { display: -webkit-box; min-height: 2.5em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-weight: 700; font-size: 15px; line-height: 1.25; color: var(--black); overflow-wrap: anywhere; }
+  .prof-role { display: -webkit-box; min-height: 2.4em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 12px; line-height: 1.2; color: var(--yellow); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; overflow-wrap: anywhere; }
+  .prof-stars { min-height: 18px; color: var(--yellow); font-size: 13px; margin-bottom: 12px; }
   .prof-stars span { color: #999; font-size: 12px; margin-left: 4px; }
   .prof-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
-  .prof-tag { background: var(--light-gray); color: var(--text); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
-  .prof-info { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid #EBEBEB; }
-  .prof-location { font-size: 12px; color: #999; display: flex; align-items: center; gap: 4px; }
+  .prof-tag { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--light-gray); color: var(--text); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+  .prof-info { display: flex; min-height: 56px; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 16px; border-top: 1px solid #EBEBEB; }
+  .prof-location { display: -webkit-box; min-width: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 12px; color: #999; overflow-wrap: anywhere; }
   .prof-price { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; color: var(--black); }
   .prof-price small { font-size: 11px; font-weight: 400; color: #999; font-family: 'Inter', sans-serif; }
-  .btn-prof-contact { width: 100%; margin-top: 14px; background: transparent; border: 1.5px solid var(--yellow); color: var(--yellow); padding: 9px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s, color .2s; }
+  .btn-prof-contact { flex-shrink: 0; width: 100%; min-height: 40px; box-sizing: border-box; margin-top: 14px; background: transparent; border: 1.5px solid var(--yellow); color: var(--yellow); padding: 9px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s, color .2s; }
   .btn-prof-contact:hover { background: var(--yellow); color: var(--black); }
   .prof-verified { position: absolute; top: 16px; right: 16px; background: #E8F5E9; color: #2E7D32; font-size: 10px; font-weight: 700; padding: 3px 8px; display: flex; align-items: center; gap: 4px; border-radius: 20px; }
 
@@ -1322,6 +1323,7 @@
 .perfil-botao-contato:disabled { background: #343434; color: #aaa; cursor: default; }
 .perfil-botao-solicitar { margin-top: 22px; }
 .perfil-botao-solicitar + .perfil-botao-contato { margin-top: 10px; border: 1px solid var(--yellow); background: transparent; color: var(--yellow); }
+.perfil-contato .perfil-botao-contato { box-sizing: border-box; width: 100%; height: 52px; min-height: 52px; margin: 10px 0 0; padding: 0 12px; }
 body.perfil-aberto { overflow: hidden; }
 
 .solicitacao-overlay { display: none; position: fixed; inset: 0; z-index: 10040; align-items: center; justify-content: center; padding: 18px; background: rgba(0,0,0,.82); }

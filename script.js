@@ -1976,7 +1976,6 @@ function abrirPerfilPrestador(id, idServico = null) {
     if (!prestador) return;
     prestadorPerfilAtual = prestador;
     const modal = document.getElementById("modalPerfilPrestador");
-    const fotos = prestador.fotos || [];
     const nome = escaparHTML(prestador.nome || "Profissional");
     const profissao = escaparHTML(prestador.profissao || "Profissional da construção");
     const especialidades = prestador.especialidades || (prestador.especialidade ? [prestador.especialidade] : []);
@@ -1999,7 +1998,6 @@ function abrirPerfilPrestador(id, idServico = null) {
         : `<div class="perfil-avatar-grande">${escaparHTML(String(prestador.nome || "P").split(" ").map(parte => parte[0]).slice(0, 2).join(""))}</div>`;
     const fotosTrabalho = prestador.fotos_trabalhos || [];
     const galeria = fotosTrabalho.length ? `<section class="perfil-galeria-secao"><h3>📷 Meus trabalhos</h3><div class="perfil-galeria">${fotosTrabalho.map((foto, indice) => `<button type="button" onclick="abrirGaleriaPrestador(${Number(id)}, ${indice}, 'trabalhos')" aria-label="Ampliar trabalho ${indice + 1}"><img src="${escaparHTML(resolverUrlImagem(foto))}" alt="Trabalho ${indice + 1} de ${nome}"></button>`).join("")}</div></section>` : "";
-    const galeriaServico = fotos.length ? `<section class="perfil-galeria-secao"><h3>📷 Fotos deste serviço</h3><div class="perfil-galeria">${fotos.map((foto, indice) => `<button type="button" onclick="abrirGaleriaPrestador(${Number(id)}, ${indice}, 'servico')" aria-label="Ampliar foto do serviço ${indice + 1}"><img src="${escaparHTML(resolverUrlImagem(foto))}" alt="Foto ${indice + 1} do serviço"></button>`).join("")}</div></section>` : "";
     const notaHtml = temAvaliacao
         ? `<strong>⭐ ${nota.toFixed(1)}</strong> de 5 (${totalAvaliacoes} avaliações)`
         : '<span>Este profissional ainda não recebeu avaliações.</span>';
@@ -2026,7 +2024,6 @@ function abrirPerfilPrestador(id, idServico = null) {
                 <div class="perfil-preco"><strong>${diaria}</strong><span>por diária</span></div>
             </div>
             ${galeria}
-            ${galeriaServico}
             <div class="perfil-detalhes">
                 <section class="perfil-sobre"><h3>📝 Sobre mim</h3><p>${escaparHTML(prestador.descricao || "O profissional ainda não adicionou uma descrição.")}</p><h3>⚙ Serviços oferecidos</h3><div class="perfil-tags">${tags}</div><h3>📍 Localização</h3><p>${escaparHTML(prestador.cidade)}${prestador.estado ? `, ${escaparHTML(prestador.estado)}` : ""}</p></section>
                 <aside class="perfil-contato"><h3>⭐ Avaliações</h3><p id="resumoAvaliacoesPrestador-${Number(id)}">${notaHtml}</p><div id="avaliacoesPrestador-${Number(id)}" class="lista-avaliacoes"><span>Carregando comentários...</span></div>${solicitar}${contato}</aside>
@@ -2382,12 +2379,12 @@ function renderizarEquipamentos(equipamentos) {
                 <h3>${nome}</h3>
 
                 <ul class="machine-features">
-                    <li>👤 ${prestador}</li>
-                    <li>📍 ${cidade}${estado ? ` - ${estado}` : ''}</li>
-                    <li>💰 ${preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/dia</li>
-                    <li>📦 Quantidade: ${quantidade}</li>
-                    <li>${Number(equipamento.total_avaliacoes) > 0 && Number(equipamento.avaliacao) > 0 ? `⭐ ${Number(equipamento.avaliacao).toFixed(1)} (${Number(equipamento.total_avaliacoes)} avaliações)` : 'Ainda sem avaliações'}</li>
-                    <li class="machine-availability ${disponivel ? 'disponivel' : 'indisponivel'}">${disponivel ? 'Disponível para aluguel' : 'Indisponível no momento'}</li>
+                    <li><span>👤 ${prestador}</span></li>
+                    <li><span>📍 ${cidade}${estado ? ` - ${estado}` : ''}</span></li>
+                    <li><span>💰 ${preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/dia</span></li>
+                    <li><span>📦 Quantidade: ${quantidade}</span></li>
+                    <li><span>${Number(equipamento.total_avaliacoes) > 0 && Number(equipamento.avaliacao) > 0 ? `⭐ ${Number(equipamento.avaliacao).toFixed(1)} (${Number(equipamento.total_avaliacoes)} avaliações)` : 'Ainda sem avaliações'}</span></li>
+                    <li class="machine-availability ${disponivel ? 'disponivel' : 'indisponivel'}"><span>${disponivel ? 'Disponível para aluguel' : 'Indisponível no momento'}</span></li>
                 </ul>
 
                 <button class="btn-quote" type="button" onclick="abrirDetalhesEquipamento(${Number(equipamento.id_equipamento)}, event)">
