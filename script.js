@@ -110,6 +110,7 @@ function selectTipo(btn){
   let solicitacaoPendenteLogin = null;
   let solicitacaoAtual = null;
   let intervaloNotificacoes = null;
+  let focoAnteriorPerfilChat = null;
 
   function tokenChat() {
     return obterUsuarioPainel()?.auth_token || "";
@@ -197,12 +198,87 @@ function selectTipo(btn){
     const painel = document.getElementById('chat-conversation-view');
     painel.classList.add('open');
     const nome = conversa.nome_participante || 'Conversa';
-    document.querySelector('.chat-header-name').textContent = nome;
-    document.querySelector('.chat-avatar-header').textContent = nome.split(/\s+/).map(parte => parte[0]).slice(0, 2).join('').toUpperCase();
+    const nomeCabecalho = document.querySelector('.chat-header-name');
+    nomeCabecalho.textContent = nome;
+    nomeCabecalho.disabled = false;
+    definirAvatarChat(document.querySelector('.chat-avatar-header'), nome, conversa.foto_participante);
     const mensagens = document.getElementById('chat-messages-list');
     mensagens.innerHTML = '<div class="chat-loading">Carregando mensagens...</div>';
     carregarMensagensChat(id, 'inicial');
     intervaloMensagensChat = setInterval(() => carregarMensagensChat(id, 'novas'), 3000);
+  }
+
+  function definirAvatarChat(elemento, nome, referenciaFoto) {
+    if (!elemento) return;
+    const iniciais = String(nome || 'U').split(/\s+/).map(parte => parte[0]).slice(0, 2).join('').toUpperCase();
+    elemento.textContent = iniciais;
+
+    const urlFoto = resolverUrlImagem(referenciaFoto);
+    if (!urlFoto) return;
+
+    const imagem = document.createElement('img');
+    imagem.className = 'chat-avatar-image';
+    imagem.src = urlFoto;
+    imagem.alt = '';
+    imagem.setAttribute('aria-hidden', 'true');
+    imagem.addEventListener('error', () => imagem.remove(), { once: true });
+    elemento.appendChild(imagem);
+  }
+
+  function abrirPerfilParticipanteChat(idConversa = conversaAtivaId) {
+    const conversa = conversasDoUsuario.find(item => Number(item.id_conversa) === Number(idConversa));
+    if (!conversa) return;
+
+    const nomeOriginal = String(conversa.nome_participante || 'Usuário');
+    const nome = escaparHTML(nomeOriginal);
+    const tipo = String(conversa.tipo_participante || '').toUpperCase();
+    const ehPrestador = tipo === 'PRESTADOR';
+    const tipoLabel = ehPrestador ? 'Prestador' : 'Contratante';
+    const referenciaFoto = resolverUrlImagem(conversa.foto_participante);
+    const iniciais = escaparHTML(nomeOriginal.split(/\s+/).map(parte => parte[0]).slice(0, 2).join('').toUpperCase());
+    const localizacao = [conversa.cidade_participante, conversa.estado_participante].filter(Boolean).map(escaparHTML).join(', ');
+    const descricao = escaparHTML(conversa.descricao_participante || 'Este usuário ainda não adicionou uma descrição ao perfil.');
+    const totalAvaliacoes = Number(conversa.total_avaliacoes_participante) || 0;
+    const nota = Number(conversa.avaliacao_participante);
+    const avaliacao = ehPrestador
+      ? `<p class="chat-profile-rating">${totalAvaliacoes && Number.isFinite(nota) ? `⭐ ${nota.toFixed(1)} de 5 (${totalAvaliacoes} avaliações)` : 'Ainda sem avaliações'}</p>`
+      : '';
+    const imagem = referenciaFoto
+      ? `<img class="chat-profile-photo" src="${escaparHTML(referenciaFoto)}" alt="" aria-hidden="true">`
+      : '';
+
+    const modal = document.getElementById('modalPerfilChat');
+    document.getElementById('chatPerfilConteudo').innerHTML = `
+      <div class="chat-profile-heading">
+        <div class="chat-profile-avatar">${iniciais}${imagem}</div>
+        <div class="chat-profile-identity">
+          <span class="chat-profile-role">${tipoLabel}</span>
+          <h2 id="chatPerfilNome">${nome}</h2>
+          ${ehPrestador && conversa.profissao_participante ? `<p>${escaparHTML(conversa.profissao_participante)}</p>` : ''}
+          ${ehPrestador && localizacao ? `<p class="chat-profile-location">📍 ${localizacao}</p>` : ''}
+          ${avaliacao}
+        </div>
+      </div>
+      <section class="chat-profile-about">
+        <h3>Sobre</h3>
+        <p>${descricao}</p>
+      </section>`;
+    const foto = modal.querySelector('.chat-profile-photo');
+    if (foto) foto.addEventListener('error', () => foto.remove(), { once: true });
+    focoAnteriorPerfilChat = document.activeElement;
+    modal.classList.add('ativo');
+    modal.setAttribute('aria-hidden', 'false');
+    modal.querySelector('.chat-profile-close')?.focus();
+  }
+
+  function fecharPerfilChat(event) {
+    if (event && event.target !== event.currentTarget) return;
+    const modal = document.getElementById('modalPerfilChat');
+    if (!modal) return;
+    modal.classList.remove('ativo');
+    modal.setAttribute('aria-hidden', 'true');
+    if (focoAnteriorPerfilChat instanceof HTMLElement) focoAnteriorPerfilChat.focus();
+    focoAnteriorPerfilChat = null;
   }
 
   function closeConversation() {
@@ -215,7 +291,10 @@ function selectTipo(btn){
     if (painel) painel.classList.remove('open');
     const nome = document.querySelector('.chat-header-name');
     const avatar = document.querySelector('.chat-avatar-header');
-    if (nome) nome.textContent = 'Mensagens';
+    if (nome) {
+      nome.textContent = 'Mensagens';
+      nome.disabled = true;
+    }
     if (avatar) {
       avatar.textContent = '💬';
       avatar.style.background = 'var(--yellow)';
@@ -256,23 +335,32 @@ function selectTipo(btn){
     try {
       const resultado = await requisicaoChat('/conversas');
       conversasDoUsuario = resultado.conversas || [];
+      await prepararUrlsImagens();
       if (!conversasDoUsuario.length) {
         lista.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div><div>Suas conversas aparecerão aqui.</div><div>Abra o perfil de um prestador para iniciar uma conversa.</div></div>';
         return;
       }
       lista.innerHTML = conversasDoUsuario.map(conversa => {
         const nome = escaparHTML(conversa.nome_participante || 'Usuário');
-        const iniciais = escaparHTML(String(conversa.nome_participante || 'U').split(/\s+/).map(parte => parte[0]).slice(0, 2).join('').toUpperCase());
         const ultima = escaparHTML(conversa.ultima_mensagem || 'Conversa iniciada. Envie uma mensagem.');
         const data = conversa.ultima_mensagem_em || conversa.criada_em;
         const hora = data ? new Date(data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
         const naoLidas = Number(conversa.nao_lidas) || 0;
-        return `<button type="button" class="chat-contact ${naoLidas ? 'unread' : ''}" onclick="openConversation(${Number(conversa.id_conversa)})">
-          <span class="chat-contact-avatar">${iniciais}</span>
-          <span class="chat-contact-info"><span class="chat-contact-top"><span class="chat-contact-name">${nome}</span><span class="chat-contact-time">${hora}</span></span><span class="chat-contact-msg">${ultima}</span></span>
+        return `<div class="chat-contact ${naoLidas ? 'unread' : ''}">
+          <button type="button" class="chat-contact-avatar-button" onclick="openConversation(${Number(conversa.id_conversa)})" aria-label="Abrir conversa com ${nome}">
+            <span class="chat-contact-avatar"></span>
+          </button>
+          <span class="chat-contact-info">
+            <span class="chat-contact-top"><button type="button" class="chat-contact-name" onclick="abrirPerfilParticipanteChat(${Number(conversa.id_conversa)})">${nome}</button><span class="chat-contact-time">${hora}</span></span>
+            <button type="button" class="chat-contact-open" onclick="openConversation(${Number(conversa.id_conversa)})" aria-label="Abrir conversa com ${nome}"><span class="chat-contact-msg">${ultima}</span></button>
+          </span>
           ${naoLidas ? `<span class="chat-unread-badge">${naoLidas}</span>` : ''}
-        </button>`;
+        </div>`;
       }).join('');
+      lista.querySelectorAll('.chat-contact').forEach((contato, indice) => {
+        const conversa = conversasDoUsuario[indice];
+        definirAvatarChat(contato.querySelector('.chat-contact-avatar'), conversa?.nome_participante, conversa?.foto_participante);
+      });
     } catch (erro) {
       lista.innerHTML = `<div class="chat-empty">${escaparHTML(erro.message)}</div>`;
     }
@@ -399,7 +487,15 @@ function selectTipo(btn){
     }
   }
 
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeChat(); } });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('modalPerfilChat')?.classList.contains('ativo')) {
+      fecharPerfilChat();
+      return;
+    }
+    closeModal();
+    closeChat();
+  });
   
  
 function mascararTelefoneBrasil(valor) {
@@ -1747,16 +1843,28 @@ function abrirFormularioServico(idServico = null) {
     const fotos = servico?.fotos || [];
     const especialidades = (servico?.especialidades || []).join(', ');
     destino.innerHTML = `<form id="formServicoPainel" class="anuncio-painel-card formulario-servico-painel" onsubmit="salvarServicoPainel(event, ${servico ? Number(servico.id_servico) : 'null'})">
-        <h3>${servico ? 'Editar serviço' : 'Novo serviço'}</h3>
-        <label>Serviço ou profissão<input name="nome_servico" maxlength="100" required value="${escaparTextoPainel(servico?.nome_servico || '')}"></label>
-        <label>Descrição<textarea name="descricao" maxlength="4000" rows="3">${escaparTextoPainel(servico?.descricao || '')}</textarea></label>
-        <div class="form-solicitacao-linha"><label>Cidade<input name="cidade" maxlength="100" required value="${escaparTextoPainel(servico?.cidade || '')}"></label><label>Estado<input name="estado" maxlength="50" required value="${escaparTextoPainel(servico?.estado || '')}"></label></div>
-        <label class="servico-valor-negociavel"><input name="valor_negociavel" type="checkbox" ${servico?.valor_negociavel ? 'checked' : ''} onchange="this.form.elements.valor_diaria.disabled=this.checked"> Valor a combinar</label>
-        <label>Valor da diária<input name="valor_diaria" type="number" min="0" step="0.01" ${servico?.valor_negociavel ? 'disabled' : ''} ${servico?.valor_negociavel ? '' : 'required'} value="${servico?.valor_diaria == null ? '' : escaparTextoPainel(servico.valor_diaria)}"></label>
-        <label>Especialidades (separadas por vírgula)<input name="especialidades" maxlength="1000" value="${escaparTextoPainel(especialidades)}" placeholder="Ex.: reformas, acabamento"></label>
-        ${fotos.length ? `<div class="fotos-anuncio-painel fotos-servico-existentes">${fotos.map((foto, indice) => `<label><img src="${escaparTextoPainel(resolverUrlImagem(foto))}" alt="Foto atual ${indice + 1}"><input type="checkbox" name="fotoManter" value="${escaparTextoPainel(foto)}" checked> Manter foto ${indice + 1}</label>`).join('')}</div>` : ''}
-        <label>Fotos do serviço<input name="fotos" type="file" accept="image/jpeg,image/png,image/webp" multiple><small>Até 5 fotos no total, máximo de 5 MB cada.</small></label>
-        <div class="acoes-anuncio-painel"><button class="acao-anuncio-principal" type="submit">${servico ? 'Salvar alterações' : 'Publicar serviço'}</button><button class="acao-anuncio-secundaria" type="button" onclick="document.getElementById('formularioServicoPainel').innerHTML=''">Cancelar</button></div>
+        <header class="formulario-servico-cabecalho">
+            <span>MEUS SERVI&Ccedil;OS</span>
+            <h3>${servico ? 'Editar servi&ccedil;o' : 'Novo servi&ccedil;o'}</h3>
+            <p>Revise os detalhes do an&uacute;ncio e mantenha as informa&ccedil;&otilde;es claras para os contratantes.</p>
+        </header>
+        <div class="formulario-servico-campos">
+            <label class="campo-form-servico">Servi&ccedil;o ou profiss&atilde;o<input name="nome_servico" maxlength="100" required value="${escaparTextoPainel(servico?.nome_servico || '')}"></label>
+            <label class="campo-form-servico">Especialidades <span>(separadas por v&iacute;rgula)</span><input name="especialidades" maxlength="1000" value="${escaparTextoPainel(especialidades)}" placeholder="Ex.: reformas, acabamento"></label>
+            <label class="campo-form-servico campo-form-servico-largo">Descri&ccedil;&atilde;o<textarea name="descricao" maxlength="4000" rows="4" placeholder="Descreva os servi&ccedil;os oferecidos">${escaparTextoPainel(servico?.descricao || '')}</textarea></label>
+            <label class="campo-form-servico">Cidade<input name="cidade" maxlength="100" required value="${escaparTextoPainel(servico?.cidade || '')}"></label>
+            <label class="campo-form-servico">Estado<input name="estado" maxlength="50" required value="${escaparTextoPainel(servico?.estado || '')}"></label>
+            <div class="servico-valor-grupo campo-form-servico-largo">
+                <label class="servico-valor-negociavel"><input name="valor_negociavel" type="checkbox" ${servico?.valor_negociavel ? 'checked' : ''} onchange="this.form.elements.valor_diaria.disabled=this.checked"><span>Valor a combinar</span></label>
+                <label class="campo-form-servico">Valor fixo da di&aacute;ria<input name="valor_diaria" type="number" min="0" step="0.01" ${servico?.valor_negociavel ? 'disabled' : ''} ${servico?.valor_negociavel ? '' : 'required'} value="${servico?.valor_diaria == null ? '' : escaparTextoPainel(servico.valor_diaria)}"></label>
+            </div>
+        </div>
+        <section class="servico-fotos-editor">
+            <div class="servico-fotos-cabecalho"><h4>Fotos do servi&ccedil;o</h4><p>${fotos.length ? 'Desmarque as fotos que deseja remover.' : 'Adicione fotos para apresentar este servi&ccedil;o.'}</p></div>
+            ${fotos.length ? `<div class="fotos-servico-existentes">${fotos.map((foto, indice) => `<label class="servico-foto-existente"><img src="${escaparTextoPainel(resolverUrlImagem(foto))}" alt="Foto atual ${indice + 1}"><span><input type="checkbox" name="fotoManter" value="${escaparTextoPainel(foto)}" checked> Manter foto ${indice + 1}</span></label>`).join('')}</div>` : ''}
+            <label class="campo-form-servico servico-upload-fotos">Adicionar fotos<input name="fotos" type="file" accept="image/jpeg,image/png,image/webp" multiple><small>At&eacute; 5 fotos no total, m&aacute;ximo de 5 MB cada.</small></label>
+        </section>
+        <div class="acoes-anuncio-painel formulario-servico-acoes"><button class="acao-anuncio-principal" type="submit">${servico ? 'Salvar altera&ccedil;&otilde;es' : 'Publicar servi&ccedil;o'}</button><button class="acao-anuncio-secundaria" type="button" onclick="document.getElementById('formularioServicoPainel').innerHTML=''">Cancelar</button></div>
     </form>`;
     destino.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }

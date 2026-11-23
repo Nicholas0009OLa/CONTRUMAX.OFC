@@ -1488,6 +1488,17 @@ app.get('/conversas', autenticar, async (req, res) => {
                 c.id_cliente,
                 c.id_prestador,
                 u.nome AS nome_participante,
+                u.tipo_usuario AS tipo_participante,
+                CASE
+                    WHEN u.id_usuario = p.id_usuario THEN COALESCE(NULLIF(u.foto_perfil, ''), p.foto)
+                    ELSE u.foto_perfil
+                END AS foto_participante,
+                CASE WHEN u.id_usuario = p.id_usuario THEN p.profissao ELSE NULL END AS profissao_participante,
+                CASE WHEN u.id_usuario = p.id_usuario THEN p.cidade ELSE NULL END AS cidade_participante,
+                CASE WHEN u.id_usuario = p.id_usuario THEN p.estado ELSE NULL END AS estado_participante,
+                CASE WHEN u.id_usuario = p.id_usuario THEN p.descricao ELSE u.descricao END AS descricao_participante,
+                CASE WHEN u.id_usuario = p.id_usuario THEN p.avaliacao ELSE NULL END AS avaliacao_participante,
+                CASE WHEN u.id_usuario = p.id_usuario THEN p.total_avaliacoes ELSE NULL END AS total_avaliacoes_participante,
                 (SELECT m.mensagem FROM mensagens m WHERE m.id_conversa = c.id_conversa ORDER BY m.id_mensagem DESC LIMIT 1) AS ultima_mensagem,
                 (SELECT m.data_envio FROM mensagens m WHERE m.id_conversa = c.id_conversa ORDER BY m.id_mensagem DESC LIMIT 1) AS ultima_mensagem_em,
                 (SELECT COUNT(*) FROM mensagens m WHERE m.id_conversa = c.id_conversa AND m.id_remetente <> ? AND m.lida = 0) AS nao_lidas,

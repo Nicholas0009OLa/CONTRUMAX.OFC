@@ -485,9 +485,9 @@
 
         <div class="chat-header-info">
 
-          <div class="chat-header-name">
+          <button type="button" class="chat-header-name" onclick="abrirPerfilParticipanteChat()" aria-label="Ver perfil deste participante" disabled>
             Mensagens
-          </div>
+          </button>
 
           <div class="chat-header-status">
             Mensagens salvas na plataforma
@@ -640,6 +640,13 @@
 
   </div>
 
+</div>
+
+<div id="modalPerfilChat" class="chat-profile-overlay" aria-hidden="true" onclick="fecharPerfilChat(event)">
+  <section class="chat-profile-modal" role="dialog" aria-modal="true" aria-labelledby="chatPerfilNome">
+    <button type="button" class="chat-profile-close" onclick="fecharPerfilChat()" aria-label="Fechar perfil">×</button>
+    <div id="chatPerfilConteudo"></div>
+  </section>
 </div>
 
 
