@@ -1,3 +1,4 @@
+// Serviço de imagens: valida arquivos, organiza chaves no Storage e mantém a chave de serviço no backend.
 const crypto = require('crypto');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
@@ -7,6 +8,7 @@ const UUID = '[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9
 // Keep previously stored objects manageable, even if their extension predates the upload allowlist.
 const PADRAO_OBJETO_CONSTRUMAX = new RegExp(`^(?:prestadores/\\d+/(?:perfil|trabalhos)|equipamentos/\\d+|servicos/\\d+|usuarios/\\d+/perfil)/${UUID}\\.[a-z0-9]{1,8}$`, 'i');
 
+// Confere a assinatura binária do arquivo em vez de confiar no MIME informado pelo navegador.
 function detectarTipoImagem(buffer) {
     if (!Buffer.isBuffer(buffer)) return null;
     if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
@@ -51,6 +53,7 @@ function caminhoObjetoGerenciado(caminho) {
         PADRAO_OBJETO_CONSTRUMAX.test(caminho) && !caminho.includes('..');
 }
 
+// Limita alterações e exclusões a chaves que pertencem ao tipo e ID autorizados pelo servidor.
 function caminhoObjetoPertenceA(caminho, categoria, idRegistro) {
     const id = Number(idRegistro);
     if (!Number.isSafeInteger(id) || id <= 0 || !caminhoObjetoGerenciado(caminho)) return false;

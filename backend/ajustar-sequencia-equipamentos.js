@@ -1,3 +1,4 @@
+// Script legado que ajusta o próximo ID da sequência de equipamentos com base nos registros atuais.
 const db = require('./db');
 
 db.query(

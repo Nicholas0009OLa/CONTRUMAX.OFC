@@ -1,3 +1,4 @@
+// Migração estrutural de anúncios de serviços; --plan consulta e descreve mudanças sem aplicá-las.
 let db;
 
 const COLUNAS_NECESSARIAS = [

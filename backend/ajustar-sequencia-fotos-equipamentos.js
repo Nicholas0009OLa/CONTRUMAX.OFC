@@ -1,4 +1,5 @@
 
+// Script legado que ajusta o próximo ID da sequência de fotos de equipamentos.
 const db = require('./db');
 
 db.query(

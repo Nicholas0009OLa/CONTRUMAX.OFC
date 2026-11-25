@@ -1,3 +1,4 @@
+// Testes puros de validacao e plano; nao conectam nem alteram o TiDB.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {

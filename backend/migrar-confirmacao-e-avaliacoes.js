@@ -1,3 +1,4 @@
+// Migração de colunas e estruturas para confirmação do cliente e avaliações de solicitações.
 const db = require('./db');
 
 async function executarMigracao() {

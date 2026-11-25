@@ -1,3 +1,4 @@
+// Migração opcional que garante a coluna de descrição em usuários.
 const db = require('./db');
 
 async function executar() {

@@ -1,3 +1,4 @@
+// Cliente da API: seleciona o backend local durante o desenvolvimento e o publicado nos demais hosts.
 const API_BASE_URL = ["localhost", "127.0.0.1"].includes(window.location.hostname)
     ? "http://localhost:3000"
     : "https://contrumax-ofc.onrender.com";
@@ -20,6 +21,7 @@ function prepararUrlsImagens() {
     return requisicaoConfigImagens;
 }
 
+// Compatibilidade para URLs do Supabase e referências antigas /uploads/.
 function resolverUrlImagem(referencia) {
     const caminho = String(referencia || '').trim();
     if (!caminho) return '';
@@ -53,7 +55,7 @@ document.querySelector('.nav-links')?.addEventListener('click', event => {
     }
 });
 
-/* ── Auth Modal ─── */
+/* Autenticação: modal, formulários e chamadas às rotas de conta. */
   function openModal(tab) {
     document.getElementById('chatOverlay').classList.remove('open');
     document.getElementById('modalOverlay').classList.add('open');
@@ -70,11 +72,17 @@ document.querySelector('.nav-links')?.addEventListener('click', event => {
     document.querySelectorAll('.modal-panel').forEach(p => p.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
     document.getElementById('panel-' + tab).classList.add('active');
+    if (tab === 'cadastro') atualizarBotaoCadastroPendente();
   }
   // funaçao dos campos do prestador
  let tipoConta = "contratante";
 
 function selectTipo(btn){
+
+    if (cadastroPrestadorPendente()) {
+        atualizarBotaoCadastroPendente();
+        return;
+    }
 
     document
         .querySelectorAll(".tipo-btn")
@@ -99,6 +107,7 @@ function selectTipo(btn){
 }
 
   /* ── Chat Modal ─── */
+  // Estado do chat aberto na interface; os dados persistentes são carregados pelas rotas protegidas.
   let conversasDoUsuario = [];
   let conversaAtivaId = null;
   let ultimoIdMensagem = 0;
@@ -112,6 +121,7 @@ function selectTipo(btn){
   let intervaloNotificacoes = null;
   let focoAnteriorPerfilChat = null;
 
+  // O token é enviado no cabeçalho Authorization; a validação de participação ocorre no backend.
   function tokenChat() {
     return obterUsuarioPainel()?.auth_token || "";
   }
@@ -225,6 +235,7 @@ function selectTipo(btn){
     elemento.appendChild(imagem);
   }
 
+  // Exibe apenas o perfil do participante da conversa selecionada.
   function abrirPerfilParticipanteChat(idConversa = conversaAtivaId) {
     const conversa = conversasDoUsuario.find(item => Number(item.id_conversa) === Number(idConversa));
     if (!conversa) return;
@@ -376,6 +387,7 @@ function selectTipo(btn){
     </div>`;
   }
 
+  // Solicita a exclusão ao backend, que verifica participação e propriedade da mensagem.
   async function apagarMensagemChat(idConversa, idMensagem) {
     if (!confirm('Apagar esta mensagem enviada?')) return;
     try {
@@ -392,6 +404,7 @@ function selectTipo(btn){
     }
   }
 
+  // Busca histórico paginado da conversa; acesso validado novamente pelo servidor.
   async function carregarMensagensChat(idConversa, modo, idReferencia) {
     if (!idConversa || Number(idConversa) !== Number(conversaAtivaId)) return;
     if (modo === 'novas' && buscandoNovasMensagensChat) return;
@@ -627,6 +640,68 @@ function mostrarErroCadastro(mensagem, idCampo) {
     document.getElementById(idCampo)?.focus();
 }
 
+function validarCamposProfissionalCadastro() {
+    if (!validarCpfCnpj(document.getElementById('cpfCnpj').value)) {
+        mostrarErroCadastro('Informe um CPF ou CNPJ completo e válido.', 'cpfCnpj'); return false;
+    }
+    for (const [id, rotulo] of [['profissao', 'profissão'], ['cidade', 'cidade'], ['estado', 'estado']]) {
+        if (!document.getElementById(id).value.trim()) {
+            mostrarErroCadastro(`Informe sua ${rotulo}.`, id); return false;
+        }
+    }
+    const valor = document.getElementById('valorDiaria');
+    const aCombinar = document.getElementById('valorNegociavelCadastro').checked;
+    if (!aCombinar && (!valor.value || !valor.checkValidity() || Number(valor.value) < 0)) {
+        mostrarErroCadastro('Informe um valor de diária válido ou selecione "A combinar".', 'valorDiaria'); return false;
+    }
+    if (fotosCadastroPrestador.length > 5) {
+        mostrarErroCadastro('Selecione no máximo 5 fotos.', 'fotosPrestador'); return false;
+    }
+    return true;
+}
+
+function cadastroPrestadorPendente() {
+    try {
+        if (localStorage.getItem('cadastro_prestador_pendente') !== '1') return null;
+        const usuario = JSON.parse(localStorage.getItem('usuario') || 'null');
+        return usuario?.auth_token && String(usuario.tipo_usuario).toUpperCase() === 'PRESTADOR' ? usuario : null;
+    } catch { return null; }
+}
+
+function atualizarBotaoCadastroPendente() {
+    const pendente = cadastroPrestadorPendente();
+    const botao = document.getElementById('btnCadastroSubmit');
+    if (!botao) return;
+    if (pendente) {
+        tipoConta = 'profissional';
+        document.getElementById('camposProfissional').style.display = 'block';
+        botao.textContent = 'Finalizar cadastro profissional';
+    } else {
+        botao.textContent = 'Criar minha conta';
+    }
+}
+
+async function enviarCadastroProfissional(idUsuario, token) {
+    // Reenvia somente o perfil profissional se a conta já foi criada e a etapa anterior falhou.
+    const dadosProfissional = new FormData();
+    dadosProfissional.append('id_usuario', idUsuario);
+    dadosProfissional.append('cpf_cnpj', document.getElementById('cpfCnpj').value.replace(/\D/g, ''));
+    dadosProfissional.append('profissao', document.getElementById('profissao').value.trim());
+    dadosProfissional.append('cidade', document.getElementById('cidade').value.trim());
+    dadosProfissional.append('estado', document.getElementById('estado').value.trim());
+    const valorNegociavel = document.getElementById('valorNegociavelCadastro').checked;
+    dadosProfissional.append('valor_negociavel', valorNegociavel ? '1' : '0');
+    dadosProfissional.append('valor_diaria', valorNegociavel ? '' : document.getElementById('valorDiaria').value);
+    dadosProfissional.append('descricao', document.getElementById('descricao').value.trim());
+    fotosCadastroPrestador.forEach(foto => dadosProfissional.append('fotos', foto));
+    const resposta = await fetch(`${API_BASE_URL}/cadastro-prestador`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: dadosProfissional
+    });
+    const resultado = await resposta.json();
+    if (!resposta.ok || !resultado.sucesso) throw new Error(resultado.mensagem || 'Não foi possível salvar os dados profissionais.');
+    localStorage.removeItem('cadastro_prestador_pendente');
+}
+
 function validarFormularioCadastro(tipoUsuario) {
     const nome = document.getElementById('nome').value.trim();
     const emailCampo = document.getElementById('email');
@@ -668,6 +743,24 @@ function alternarVisibilidadeSenha(botao) {
 }
 
 async function cadastrarUsuario() {
+
+    const pendente = cadastroPrestadorPendente();
+    if (pendente) {
+        if (!validarCamposProfissionalCadastro()) return;
+        try {
+            await enviarCadastroProfissional(pendente.id_usuario, pendente.auth_token);
+            alert('Cadastro profissional concluído com sucesso!');
+            fotosCadastroPrestador = [];
+            renderizarPreviewFotosCadastro();
+            closeModal();
+            verificarLogin();
+            retomarSolicitacaoPendente();
+        } catch (erro) {
+            atualizarBotaoCadastroPendente();
+            alert(`${erro.message} Sua conta foi criada. Corrija os dados ou tente novamente para finalizar o perfil profissional.`);
+        }
+        return;
+    }
 
     const nome = document.getElementById("nome").value.trim();
     const telefone = document.getElementById("telefone").value.replace(/\D/g, '');
@@ -717,66 +810,16 @@ async function cadastrarUsuario() {
                 })
             );
 
-            // Cadastro dos dados profissionais
             if (tipo_usuario === "profissional") {
-
-                const dadosProfissional = new FormData();
-
-                dadosProfissional.append("id_usuario", resultado.id);
-
-                dadosProfissional.append(
-                    "cpf_cnpj",
-                    document.getElementById("cpfCnpj").value.replace(/\D/g, '')
-                );
-
-                dadosProfissional.append(
-                    "profissao",
-                    document.getElementById("profissao").value.trim()
-                );
-
-                dadosProfissional.append(
-                    "cidade",
-                    document.getElementById("cidade").value.trim()
-                );
-
-                dadosProfissional.append(
-                    "estado",
-                    document.getElementById("estado").value.trim()
-                );
-
-                const valorNegociavel = document.getElementById('valorNegociavelCadastro').checked;
-                dadosProfissional.append('valor_negociavel', valorNegociavel ? '1' : '0');
-                dadosProfissional.append('valor_diaria', valorNegociavel ? '' : document.getElementById('valorDiaria').value);
-
-                dadosProfissional.append(
-                    "descricao",
-                    document.getElementById("descricao").value.trim()
-                );
-
-                // Adiciona as fotos selecionadas depois de validar a quantidade antes do cadastro da conta.
-                fotosCadastroPrestador.forEach(foto => dadosProfissional.append("fotos", foto));
-
-                const respostaProfissional = await fetch(
-                    `${API_BASE_URL}/cadastro-prestador`,
-                    {
-                        method: "POST",
-                        headers: { Authorization: `Bearer ${resultado.token}` },
-                        body: dadosProfissional
-                    }
-                );
-
-                const resultadoProfissional =
-                    await respostaProfissional.json();
-
-                if (!resultadoProfissional.sucesso) {
-                    console.error(resultadoProfissional);
-                    alert(
-                        "Usuário criado, mas ocorreu um erro nos dados profissionais ou nas fotos."
-                    );
+                localStorage.setItem('cadastro_prestador_pendente', '1');
+                try {
+                    await enviarCadastroProfissional(resultado.id, resultado.token);
+                } catch (erroPerfil) {
+                    atualizarBotaoCadastroPendente();
+                    alert(`${erroPerfil.message} Sua conta foi criada. Corrija os dados ou tente novamente para finalizar o perfil profissional.`);
                     return;
                 }
             }
-
             alert("Cadastro realizado com sucesso!");
 
             fotosCadastroPrestador = [];
@@ -818,9 +861,6 @@ async function loginUsuario() {
         );
 
         const resultado = await resposta.json();
-        console.log("RETORNO CADASTRO:", resultado);
-        
-
        if (resultado.sucesso) {
 
     localStorage.setItem(
@@ -1094,6 +1134,7 @@ function obterUsuarioPainel() {
 
 // Protege os dados exibidos na tela
 function escaparTextoPainel(valor) {
+    // Escapa valores variáveis antes de inseri-los nos templates HTML do painel.
     return String(valor ?? "Não informado").replace(/[&<>"']/g, caractere => ({
         "&": "&amp;",
         "<": "&lt;",
@@ -1247,6 +1288,7 @@ function formatarDataPainel(valor) {
     return Number.isNaN(data.getTime()) ? 'Não informada' : data.toLocaleDateString('pt-BR');
 }
 
+// Solicitações: pedidos enviados/recebidos, status, confirmação de conclusão e avaliações.
 async function carregarSolicitacoesPainel(eAreaPrestador) {
     const lista = document.getElementById('listaSolicitacoesPainel');
     const usuario = obterUsuarioPainel();
@@ -1367,6 +1409,7 @@ async function enviarAvaliacaoSolicitacao(event, id) {
     }
 }
 
+// Abre a conversa vinculada à solicitação escolhida.
 async function abrirChatSolicitacao(idConversa) {
     openChat();
     await carregarConversasChat();
@@ -1390,6 +1433,7 @@ let dadosPerfilEdicao = null;
 let fotosPerfilParaRemover = new Set();
 let novasFotosPerfil = [];
 
+// Perfil próprio: chamadas autenticadas usadas pelo editor e pela gestão de fotos.
 async function requisicaoPerfil(opcoes = {}) {
     const usuario = obterUsuarioPainel();
     if (!usuario?.auth_token) throw new Error('Entre na sua conta para editar o perfil.');
@@ -1534,6 +1578,7 @@ async function salvarPerfil(evento) {
     }
 }
 
+// Cliente das rotas administrativas; envia o token e interpreta respostas do backend.
 async function requisicaoAdmin(caminho, opcoes = {}) {
     const usuario = obterUsuarioPainel();
     if (String(usuario?.tipo_usuario || '').toUpperCase() !== 'ADMIN' || !usuario?.auth_token) {
@@ -1655,6 +1700,7 @@ document.addEventListener("keydown", function(event) {
 let equipamentosDoPainel = [];
 let servicosDoPainel = [];
 
+// Meus Anúncios: carrega e separa serviços e máquinas do prestador autenticado.
 async function carregarMeusAnuncios() {
 
     const usuario = obterUsuarioPainel();
@@ -1943,6 +1989,7 @@ function escaparHTML(valor) {
 
 // PARA BUSCAR PRESTADORES
 
+// Busca de profissionais: apresenta cards formados pelos dados públicos retornados pela API.
 function renderizarPrestadores(prestadores) {
     const lista = document.getElementById("lista-profissionais");
     if (!prestadores.length) {
@@ -2039,6 +2086,7 @@ function normalizarTermoBusca(valor) {
 }
 
 
+// Envia os filtros de profissão/serviço e localização ao backend.
 async function buscarPrestadores(event) {
     if (event) event.preventDefault();
     const servico = document.getElementById("buscaProfissional").value.trim();
@@ -2078,6 +2126,7 @@ function limparBuscaPrestadores() {
     buscarPrestadores();
 }
 
+// Perfil público do profissional, com trabalhos, avaliações e ações disponíveis ao contratante.
 function abrirPerfilPrestador(id, idServico = null) {
     const prestador = todosPrestadores.find(item => idServico
         ? Number(item.id_prestador) === Number(id) && Number(item.id_servico) === Number(idServico)
@@ -2343,6 +2392,7 @@ function fecharSolicitacaoFora(event) {
     if (event.target === document.getElementById('modalSolicitacao')) fecharSolicitacao();
 }
 
+// Cria solicitação de serviço ou aluguel pela rota autenticada e com chave de idempotência.
 async function enviarSolicitacao(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -2407,6 +2457,7 @@ let todosEquipamentos = [];
     }
 })();
 
+// Busca de máquinas: monta os cards e detalhes dos anúncios disponíveis.
 function renderizarEquipamentos(equipamentos) {
 
     const lista = document.getElementById("lista-equipamentos");
@@ -2714,14 +2765,6 @@ async function cadastrarEquipamento() {
     fotosSelecionadas.forEach((foto) => {
         dados.append("fotos", foto);
     });
-
-
-    console.log(
-        "Quantidade de fotos enviadas:",
-        fotosSelecionadas.length
-    );
-
-    console.log("FOTOS:", fotosSelecionadas);
 
 
     try {

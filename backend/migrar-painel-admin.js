@@ -1,3 +1,4 @@
+// Prepara as estruturas e a conta usada pelo painel administrativo.
 const db = require('./db');
 
 async function adicionarColunaSeAusente(tabela, coluna, definicao) {

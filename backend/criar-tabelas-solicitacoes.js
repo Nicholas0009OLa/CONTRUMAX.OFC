@@ -1,3 +1,4 @@
+// Prepara tabelas de solicitações, idempotência e sequência de identificadores.
 const db = require('./db');
 
 async function executarMigracao() {

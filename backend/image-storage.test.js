@@ -1,3 +1,4 @@
+// Testes de validacao binaria, caminhos, propriedade e integracao simulada com o Storage.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {

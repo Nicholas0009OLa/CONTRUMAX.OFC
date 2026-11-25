@@ -1,4 +1,5 @@
 
+// Script legado para criar a sequência auxiliar de IDs das fotos de equipamentos.
 const db = require('./db');
 
 db.query(`

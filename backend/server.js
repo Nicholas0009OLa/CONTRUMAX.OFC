@@ -1,7 +1,9 @@
+// API principal: autenticação, perfis, anúncios, chat, solicitações, avaliações e administração.
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const db = require('./db');
+const { criarPoliticaCors } = require('./cors-policy');
 
 const multer = require('multer');
 const path = require('path');
@@ -11,22 +13,58 @@ const {
     criarCaminhoObjeto,
     validarImagem
 } = require('./image-storage');
+const { criarHashSenha, verificarSenha, HASH_DUMMY } = require('./password-utils');
+const { mapearPrestadorPublico } = require('./public-provider');
 
 console.log("SERVER DA CONSTRUMAX CARREGADO");
 
 const app = express();
+if (process.env.RENDER === 'true') app.set('trust proxy', 1);
+// Sessões e limites de tentativas ficam em memória neste processo.
 const sessoes = new Map();
 const armazenamentoImagens = criarArmazenamentoImagens();
+const DURACAO_SESSAO_MS = 12 * 60 * 60 * 1000;
+const tentativasPorIp = new Map();
+
+function limitarTentativas({ limite, janelaMs }) {
+    return (req, res, next) => {
+        const agora = Date.now();
+        const chave = req.ip || req.socket?.remoteAddress || 'desconhecido';
+        let registro = tentativasPorIp.get(chave);
+        if (!registro || registro.expiraEm <= agora) {
+            if (tentativasPorIp.size >= 10000) {
+                for (const [ip, item] of tentativasPorIp) if (item.expiraEm <= agora) tentativasPorIp.delete(ip);
+            }
+            if (tentativasPorIp.size >= 10000) {
+                res.set('Retry-After', '60');
+                return res.status(429).json({ sucesso: false, mensagem: 'Muitas tentativas. Aguarde antes de tentar novamente.' });
+            }
+            registro = { total: 0, expiraEm: agora + janelaMs };
+            tentativasPorIp.set(chave, registro);
+        }
+        registro.total++;
+        if (registro.total > limite) {
+            res.set('Retry-After', String(Math.max(1, Math.ceil((registro.expiraEm - agora) / 1000))));
+            return res.status(429).json({ sucesso: false, mensagem: 'Muitas tentativas. Aguarde antes de tentar novamente.' });
+        }
+        next();
+    };
+}
+
+const limitarCadastro = limitarTentativas({ limite: 8, janelaMs: 60 * 60 * 1000 });
+const limitarLogin = limitarTentativas({ limite: 12, janelaMs: 15 * 60 * 1000 });
 
 function criarSessao(idUsuario) {
     const token = crypto.randomBytes(32).toString('hex');
-    sessoes.set(token, Number(idUsuario));
+    sessoes.set(token, { id_usuario: Number(idUsuario), expira_em: Date.now() + DURACAO_SESSAO_MS });
     return token;
 }
 
 function autenticar(req, res, next) {
+    // Confere expiração do token e o estado atual da conta no TiDB em cada rota protegida.
     const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-    const idUsuario = sessoes.get(token);
+    const sessao = sessoes.get(token);
+    const idUsuario = sessao?.expira_em > Date.now() ? sessao.id_usuario : null;
     if (!idUsuario) {
         return res.status(401).json({ sucesso: false, mensagem: 'Faça login novamente para continuar.' });
     }
@@ -44,7 +82,16 @@ function autenticar(req, res, next) {
     });
 }
 
+const limpezaSessoes = setInterval(() => {
+    const agora = Date.now();
+    for (const [token, sessao] of sessoes) {
+        if (sessao.expira_em <= agora) sessoes.delete(token);
+    }
+}, 60 * 60 * 1000);
+limpezaSessoes.unref?.();
+
 function autorizarAdmin(req, res, next) {
+    // A autorização administrativa é validada no banco, não pelo conteúdo enviado pelo navegador.
     db.query('SELECT tipo_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1', [req.usuarioAutenticado.id_usuario], (erro, resultado) => {
         if (erro) {
             console.error('ERRO AO VALIDAR ADMINISTRADOR:', erro.message);
@@ -125,6 +172,7 @@ function removerArquivoFotoPrestador(url) {
     if (caminho && fs.existsSync(caminho)) fs.unlinkSync(caminho);
 }
 
+// Só remove um objeto gerenciado quando pertence ao registro e não há outra referência no banco.
 async function removerFotoPrestadorSeSemReferencias(url, categoria, idRegistro) {
     const referencia = String(url || '');
     const ehObjetoSupabase = armazenamentoImagens.caminhoObjetoGerenciado(referencia);
@@ -149,6 +197,7 @@ async function removerFotoPrestadorSeSemReferencias(url, categoria, idRegistro) 
     else removerArquivoFotoPrestador(referencia);
 }
 
+// O backend valida a imagem e usa a chave privada do Supabase sem expô-la ao navegador.
 async function guardarImagemNoSupabase(arquivo, categoria, idRegistro) {
     const tipoReal = validarImagem(arquivo);
     const extensoes = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
@@ -208,6 +257,7 @@ function dividirListaAgregada(valor) {
     return valor ? String(valor).split('|||').filter(Boolean) : [];
 }
 
+// Multer mantém arquivos em memória; a validação de assinatura ocorre antes do envio ao Storage.
 function uploadCamposPerfil(req, res, next) {
     uploadPrestadores.fields([
         { name: 'foto_perfil', maxCount: 1 },
@@ -240,9 +290,10 @@ function uploadFotosCadastroPrestador(req, res, next) {
 }
 
 
-app.use(cors());
+app.use(cors({ origin: criarPoliticaCors(process.env.FRONTEND_ORIGINS) }));
 app.use(express.json());
 
+// Expõe apenas informações públicas necessárias para montar URLs de imagens, nunca a chave privada.
 app.get('/api/imagens/config', (req, res) => {
     res.json({
         sucesso: true,
@@ -260,7 +311,7 @@ app.use(
 // ===============================
 
 app.get('/', (req, res) => {
-    res.send('TESTE NICHOLAS');
+    res.json({ sucesso: true, servico: 'CONSTRUMAX API' });
 });
 
 
@@ -338,7 +389,7 @@ function validarDocumentoCpfCnpj(valor) {
     return false;
 }
 
-app.post('/cadastro', (req, res) => {
+app.post('/cadastro', limitarCadastro, async (req, res) => {
 
     const {
         nome,
@@ -375,17 +426,25 @@ app.post('/cadastro', (req, res) => {
         });
     }
 
+    let senhaArmazenada;
+    try {
+        senhaArmazenada = await criarHashSenha(senha);
+    } catch (erro) {
+        console.error('Falha interna ao preparar credencial de cadastro:', erro.code || 'ERRO');
+        return res.status(500).json({ sucesso: false, mensagem: 'NÃ£o foi possÃ­vel criar a conta.' });
+    }
+
     // Gera um ID pela tabela auxiliar
     db.query(
         "INSERT INTO usuarios_id_seq () VALUES ()",
         (erroId, resultadoId) => {
 
             if (erroId) {
-                console.error("ERRO AO GERAR ID:", erroId);
+                console.error("ERRO AO GERAR ID DE USUÁRIO:", erroId.code || 'ERRO');
 
                 return res.status(500).json({
                     sucesso: false,
-                    erro: erroId.message
+                    mensagem: 'NÃ£o foi possÃ­vel criar a conta.'
                 });
             }
 
@@ -408,7 +467,7 @@ app.post('/cadastro', (req, res) => {
                     idUsuario,
                     String(nome).trim(),
                     String(email).trim(),
-                    senha,
+                    senhaArmazenada,
                     telefoneNormalizado,
                     tipoBanco
                 ],
@@ -416,12 +475,9 @@ app.post('/cadastro', (req, res) => {
                 (erro, resultado) => {
 
                     if (erro) {
-                        console.error("ERRO SQL CADASTRO:", erro);
+                        console.error("ERRO SQL CADASTRO:", erro.code || 'ERRO');
 
-                        return res.status(500).json({
-                            sucesso: false,
-                            erro: erro.message
-                        });
+                        return res.status(500).json({ sucesso: false, mensagem: 'NÃ£o foi possÃ­vel criar a conta.' });
                     }
 
                     console.log("USUÁRIO CADASTRADO! ID:", idUsuario);
@@ -523,85 +579,50 @@ app.post('/cadastro-prestador', autenticar, uploadFotosCadastroPrestador, async 
 // LOGIN
 // ===============================
 
-app.post('/login', (req, res) => {
+// Login verifica hashes modernos e converte credenciais legadas após autenticação válida.
+app.post('/login', limitarLogin, async (req, res) => {
+    const email = String(req.body?.email || '').trim();
+    const senha = String(req.body?.senha || '');
+    if (!email || !senha) return res.status(400).json({ sucesso: false, mensagem: 'Informe e-mail e senha.' });
 
-    const {
-        email,
-        senha
-    } = req.body;
-
-
-    db.query(
-
-        `SELECT 
-            id_usuario,
-            nome,
-            email,
-            telefone,
-            tipo_usuario,
-            foto_perfil,
-            descricao,
-            ativo
-         FROM usuarios
-         WHERE email = ?
-         AND senha = ?`,
-
-        [
-            email,
-            senha
-        ],
-
-        (erro, resultado) => {
-
-            if (erro) {
-
-                console.error(
-                    "ERRO LOGIN:",
-                    erro
-                );
-
-                return res.status(500).json({
-                    sucesso: false
-                });
-            }
-
-
-            console.log(
-                "RESULTADO LOGIN:",
-                resultado
-            );
-
-
-            if (resultado.length > 0 && Number(resultado[0].ativo) === 1) {
-                delete resultado[0].ativo;
-
-                res.json({
-                    sucesso: true,
-                    usuario: resultado[0],
-                    token: criarSessao(resultado[0].id_usuario)
-                });
-
-            } else {
-
-                res.json({
-                    sucesso: false,
-                    mensagem: "E-mail ou senha inválidos"
-                });
-
-            }
-
+    try {
+        const usuarios = await consultar(
+            `SELECT id_usuario, nome, email, telefone, tipo_usuario, foto_perfil, descricao, ativo, senha
+             FROM usuarios WHERE email = ? LIMIT 1`,
+            [email]
+        );
+        const usuario = usuarios[0];
+        if (!usuario || Number(usuario.ativo) !== 1) await verificarSenha(senha, HASH_DUMMY);
+        if (!usuario || Number(usuario.ativo) !== 1) {
+            return res.status(401).json({ sucesso: false, mensagem: 'E-mail ou senha inválidos.' });
         }
 
-    );
+        const verificacao = await verificarSenha(senha, usuario.senha);
+        if (!verificacao.valida && verificacao.precisaAtualizar) await verificarSenha(senha, HASH_DUMMY);
+        if (!verificacao.valida) return res.status(401).json({ sucesso: false, mensagem: 'E-mail ou senha inválidos.' });
 
+        if (verificacao.precisaAtualizar) {
+            const hashAtualizado = await criarHashSenha(senha);
+            await consultar(
+                'UPDATE usuarios SET senha = ? WHERE id_usuario = ? AND senha = ?',
+                [hashAtualizado, usuario.id_usuario, usuario.senha]
+            );
+        }
+
+        delete usuario.senha;
+        delete usuario.ativo;
+        return res.json({ sucesso: true, usuario, token: criarSessao(usuario.id_usuario) });
+    } catch (erro) {
+        console.error('ERRO LOGIN:', erro.code || 'ERRO');
+        return res.status(500).json({ sucesso: false, mensagem: 'Não foi possível entrar. Tente novamente.' });
+    }
 });
-
-
 // ===============================
 // LISTAR PRESTADORES
 // ===============================
 
 
+// Busca pública usa uma lista explícita de campos para não retornar dados privados do cadastro.
 app.get('/prestadores', (req, res) => {
 
     const servico = String(req.query.servico || '').trim();
@@ -637,9 +658,17 @@ app.get('/prestadores', (req, res) => {
     db.query(
         `
         SELECT
-            p.*,
+            p.id_prestador,
+            p.profissao,
+            p.cidade,
+            p.estado,
+            p.valor_diaria,
+            p.descricao,
+            p.foto,
+            p.verificado,
+            p.avaliacao,
+            p.total_avaliacoes,
             u.nome,
-            u.telefone,
             u.foto_perfil AS foto_perfil,
             (SELECT AVG(av.nota) FROM avaliacoes_solicitacoes av
              WHERE av.id_prestador = p.id_prestador AND av.alvo = 'PRESTADOR' AND av.nota IS NOT NULL AND av.moderacao_status = 'VISIVEL') AS nota_media_avaliacoes,
@@ -674,27 +703,18 @@ app.get('/prestadores', (req, res) => {
         (erro, resultado) => {
 
             if (erro) {
-                console.error("ERRO PRESTADORES:", erro);
+                console.error("ERRO PRESTADORES:", erro.code || 'ERRO');
 
                 return res.status(500).json({
                     sucesso: false,
-                    erro: erro.message
+                    mensagem: 'NÃ£o foi possÃ­vel carregar os profissionais.'
                 });
             }
 
-            const prestadores = resultado.map(prestador => ({
+            const prestadores = resultado.map(prestador => mapearPrestadorPublico({
                 ...prestador,
-                valor_negociavel: prestador.valor_diaria === null || prestador.valor_diaria === undefined,
-                avaliacao: prestador.nota_media_avaliacoes !== null && prestador.nota_media_avaliacoes !== undefined
-                    ? Number(prestador.nota_media_avaliacoes) : prestador.avaliacao,
-                total_avaliacoes: Number(prestador.total_notas_avaliacoes) > 0
-                    ? Number(prestador.total_notas_avaliacoes) : prestador.total_avaliacoes,
-                especialidades: prestador.especialidades
-                    ? prestador.especialidades.split('|||')
-                    : [],
-                fotos: prestador.fotos
-                    ? prestador.fotos.split('|||')
-                    : []
+                especialidades: prestador.especialidades ? prestador.especialidades.split('|||') : [],
+                fotos: prestador.fotos ? prestador.fotos.split('|||') : []
             }));
 
             res.json(prestadores);
@@ -705,6 +725,7 @@ app.get('/prestadores', (req, res) => {
 
 
 
+// Anúncios públicos de serviços ativos; filtros e dados de contato privado ficam fora da resposta.
 app.get('/servicos/anuncios', async (req, res) => {
     const servicoBusca = String(req.query.servico || '').trim();
     const cidadeBusca = String(req.query.cidade || '').trim();
@@ -732,7 +753,7 @@ app.get('/servicos/anuncios', async (req, res) => {
                     COALESCE(s.estado, p.estado) AS estado,
                     s.especialidades, p.verificado, p.admin_ativo,
                     p.valor_diaria AS valor_diaria_perfil, p.avaliacao, p.total_avaliacoes,
-                    u.nome, u.telefone, u.foto_perfil, p.foto,
+                    u.nome, u.foto_perfil, p.foto,
                     (SELECT AVG(a.nota) FROM avaliacoes_solicitacoes a
                      WHERE a.id_prestador = p.id_prestador AND a.alvo = 'PRESTADOR'
                        AND a.nota IS NOT NULL AND a.moderacao_status = 'VISIVEL') AS nota_media_avaliacoes,
@@ -782,7 +803,7 @@ app.get('/servicos/anuncios', async (req, res) => {
                      INNER JOIN especialidades e ON e.id_especialidade = pe.id_especialidade
                      WHERE pe.id_prestador = p.id_prestador) AS especialidades,
                     p.verificado, p.admin_ativo, p.valor_diaria AS valor_diaria_perfil,
-                    p.avaliacao, p.total_avaliacoes, u.nome, u.telefone, u.foto_perfil, p.foto,
+                    p.avaliacao, p.total_avaliacoes, u.nome, u.foto_perfil, p.foto,
                     (SELECT AVG(a.nota) FROM avaliacoes_solicitacoes a
                      WHERE a.id_prestador = p.id_prestador AND a.alvo = 'PRESTADOR'
                        AND a.nota IS NOT NULL AND a.moderacao_status = 'VISIVEL') AS nota_media_avaliacoes,
@@ -837,6 +858,7 @@ app.get('/servicos/anuncios', async (req, res) => {
 // ===============================
 
 
+// Busca pública de equipamentos disponíveis para locação.
 app.get('/equipamentos', (req, res) => {
     console.log("ROTA EQUIPAMENTOS REGISTRADA!");
 
@@ -1159,6 +1181,7 @@ async function salvarFotoServico(idServico, caminho, conexao) {
         [sequencia.insertId, idServico, caminho]);
 }
 
+// CRUD de serviços do prestador: rotas de escrita exigem sessão e verificam titularidade.
 app.post('/servicos', autenticar, middlewareUploadServicos, async (req, res) => {
     const dados = validarDadosServico(req.body);
     if (!dados) { removerUploadsRecebidos(req); return res.status(400).json({ sucesso: false, mensagem: 'Confira os dados do serviço e o valor informado.' }); }
@@ -1277,6 +1300,7 @@ function arquivoFotoEquipamento(url) {
     if (path.dirname(caminho) === pastaUploads && fs.existsSync(caminho)) fs.unlinkSync(caminho);
 }
 
+// Resolve o anúncio pelo ID e pelo usuário autenticado antes de permitir alterações.
 async function buscarAnuncioDoUsuario(idEquipamento, idUsuario) {
     const resultados = await consultar(
         `SELECT e.id_equipamento, e.id_prestador
@@ -1422,6 +1446,7 @@ async function buscarParticipacaoConversa(idConversa, idUsuario) {
     return conversas[0] || null;
 }
 
+// Chat: cada rota confirma a participação do usuário na conversa antes de ler ou alterar mensagens.
 app.post('/conversas', autenticar, async (req, res) => {
     const idUsuario = req.usuarioAutenticado.id_usuario;
     const idPrestador = Number(req.body.id_prestador);
@@ -1691,6 +1716,7 @@ async function tipoContaUsuario(idUsuario) {
     return usuarios[0]?.tipo_usuario || null;
 }
 
+// Solicitações de serviços e aluguel: valida participantes, anúncio e chave de idempotência.
 app.post('/solicitacoes', autenticar, async (req, res) => {
     const idCliente = req.usuarioAutenticado.id_usuario;
     const corpo = req.body || {};
@@ -2061,6 +2087,7 @@ app.patch('/solicitacoes/:id/status', autenticar, async (req, res) => {
     }
 });
 
+// Avaliações só são aceitas do contratante após confirmação da conclusão da solicitação.
 app.post('/solicitacoes/:id/avaliacao', autenticar, async (req, res) => {
     const idSolicitacao = Number(req.params.id);
     const idCliente = req.usuarioAutenticado.id_usuario;
@@ -2182,6 +2209,7 @@ app.get('/equipamentos/:id/avaliacoes', async (req, res) => {
     }
 });
 
+// Resumo de notificações restrito à conta autenticada.
 app.get('/notificacoes/resumo', autenticar, async (req, res) => {
     const idUsuario = req.usuarioAutenticado.id_usuario;
     try {
@@ -2259,6 +2287,7 @@ app.get('/api/perfil', autenticar, async (req, res) => {
     }
 });
 
+// Edição do perfil próprio; valida titularidade, imagens e referências antes de salvar.
 app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
     const idUsuario = req.usuarioAutenticado.id_usuario;
     const email = String(req.body.email || '').trim();
@@ -2446,6 +2475,7 @@ app.put('/api/perfil', autenticar, uploadCamposPerfil, async (req, res) => {
     return res.json({ sucesso: true, mensagem: 'Perfil atualizado com sucesso.', usuario: respostaPerfil });
 });
 
+// Painel administrativo: todas as rotas deste grupo exigem sessão e permissão de ADMIN.
 app.get('/api/admin/dashboard', autenticar, autorizarAdmin, async (req, res) => {
     try {
         const [usuarios, clientes, prestadores, equipamentos, solicitacoes] = await Promise.all([

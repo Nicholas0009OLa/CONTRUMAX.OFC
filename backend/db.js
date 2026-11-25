@@ -1,3 +1,4 @@
+// Pool de conexões com TiDB Cloud; credenciais são lidas do backend/.env e não devem ir ao frontend.
 const mysql = require('mysql2');
 const path = require('path');
 

@@ -1,3 +1,4 @@
+// Cria/verifica tabelas auxiliares e índice usados pelas conversas e mensagens.
 const db = require('./db');
 
 const comandos = [

@@ -1,3 +1,4 @@
+// Diagnóstico local de coluna no TiDB; executa consulta e não altera a estrutura.
 require("dotenv").config();
 
 const db = require("./db");
